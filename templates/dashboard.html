@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Dashboard</h2>
+<p class="muted">Welcome, {{ user["callsign"] }}.</p>
+
+<div class="dashboard-grid">
+
+  <a class="dash-card" href="/">
+    <div class="dash-icon">📥</div>
+    <div>
+      <h3>Inbox</h3>
+      <p>Read BPQ private messages</p>
+    </div>
+  </a>
+
+  <a class="dash-card" href="/compose">
+    <div class="dash-icon">✍️</div>
+    <div>
+      <h3>Compose</h3>
+      <p>Send a packet message</p>
+    </div>
+  </a>
+
+  <a class="dash-card" href="/admin/users">
+    <div class="dash-icon">👥</div>
+    <div>
+      <h3>Users</h3>
+      <p>{{ approved_users }} approved / {{ total_users }} total</p>
+    </div>
+  </a>
+
+  <div class="dash-card">
+    <div class="dash-icon">📡</div>
+    <div>
+      <h3>Node Status</h3>
+      <p>Coming soon</p>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

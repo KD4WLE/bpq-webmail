@@ -1,0 +1,11 @@
+[0;1;32m●[0m bpq-webmail.service - BPQ Webmail Interface
+     Loaded: loaded (]8;;file://kd4wle-bqp-interface/etc/systemd/system/bpq-webmail.service/etc/systemd/system/bpq-webmail.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;32mactive (running)[0m since Thu 2026-06-11 10:23:16 EDT; 98ms ago
+   Main PID: 1651 (uvicorn)
+      Tasks: 1 (limit: 464201)
+     Memory: 1.4M (peak: 1.4M)
+        CPU: 15ms
+     CGroup: /system.slice/bpq-webmail.service
+             └─[0;38;5;245m1651 /opt/bpq_webmail/.venv/bin/python3 /opt/bpq_webmail/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8088[0m
+
+Jun 11 10:23:16 kd4wle-bqp-interface systemd[1]: Started bpq-webmail.service - BPQ Webmail Interface.

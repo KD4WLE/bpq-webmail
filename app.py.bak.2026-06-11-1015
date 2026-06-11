@@ -275,24 +275,3 @@ def admin_toggle_user(request: Request, user_id: int):
         if user:
             conn.execute("UPDATE users SET approved = ? WHERE id = ?", (0 if user["approved"] else 1, user_id))
     return RedirectResponse("/admin/users", status_code=303)
-
-
-@app.get("/dashboard")
-def dashboard(request: Request):
-    user = require_user(request)
-
-    conn = sqlite3.connect(DB_PATH)
-    total_users = conn.execute("select count(*) from users").fetchone()[0]
-    approved_users = conn.execute("select count(*) from users where approved=1").fetchone()[0]
-    conn.close()
-
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
-            "user": user,
-            "total_users": total_users,
-            "approved_users": approved_users,
-            "portal_version": "v0.2",
-        },
-    )

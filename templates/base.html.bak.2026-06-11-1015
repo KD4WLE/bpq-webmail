@@ -19,16 +19,15 @@
       </div>
 
       <nav class="side-nav">
-        <a href="/dashboard">🏠 Dashboard</a>
-        <a href="/">📥 Inbox</a>
-        <a href="/compose">✍️ Compose</a>
-        <a href="/admin/users">👥 Admin Users</a>
-        <a href="/logout">🚪 Logout</a>
+        <a href="/">Inbox</a>
+        <a href="/compose">Compose</a>
+        <a href="/admin/users">Admin Users</a>
+        <a href="/logout">Logout</a>
       </nav>
 
       <div class="sidebar-footer">
-        KD4WLE BPQ Portal v0.2<br>
-        Packet Radio Messaging
+        Packet Radio Messaging<br>
+        Amateur Radio Network
       </div>
     </aside>
 
