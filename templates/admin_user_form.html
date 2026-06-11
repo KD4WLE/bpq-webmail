@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% if edit_user %}
+<h2>Edit User</h2>
+<form method="post" action="/admin/users/edit/{{ edit_user['id'] }}">
+{% else %}
+<h2>Create User</h2>
+<form method="post" action="/admin/users/new">
+{% endif %}
+
+<label>Website Username</label><br>
+<input name="username" value="{{ edit_user['username'] if edit_user else '' }}" required><br><br>
+
+<label>Website Password</label><br>
+<input name="password" type="password" {% if not edit_user %}required{% endif %}>
+{% if edit_user %}<small>Leave blank to keep current password.</small>{% endif %}
+<br><br>
+
+<label>Callsign</label><br>
+<input name="callsign" value="{{ edit_user['callsign'] if edit_user else '' }}" required><br><br>
+
+<label>BPQ Username</label><br>
+<input name="bpq_user" value="{{ edit_user['bpq_user'] if edit_user else '' }}" required><br><br>
+
+<label>BPQ Password</label><br>
+<input name="bpq_password" type="password" {% if not edit_user %}required{% endif %}>
+{% if edit_user %}<small>Leave blank to keep current BPQ password.</small>{% endif %}
+<br><br>
+
+<label>
+  <input type="checkbox" name="approved" {% if edit_user and edit_user['approved'] %}checked{% endif %}>
+  Approved
+</label><br>
+
+<label>
+  <input type="checkbox" name="is_admin" {% if edit_user and edit_user['is_admin'] %}checked{% endif %}>
+  Admin
+</label><br><br>
+
+<button type="submit">Save</button>
+<a href="/admin/users">Cancel</a>
+</form>
+
+{% endblock %}

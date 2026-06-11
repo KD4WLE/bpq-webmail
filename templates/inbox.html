@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>Inbox</h1>
+  <p class="muted">BPQ mailbox: {{ user.bpq_user }}</p>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <p><a class="button" href="/compose">Compose</a></p>
+</div>
+<table>
+  <thead><tr><th>ID</th><th>From</th><th>Subject</th><th>Date</th></tr></thead>
+  <tbody>
+  {% for m in messages %}
+    <tr>
+      <td>{{ m.id }}</td>
+      <td>{{ m.from }}</td>
+      <td><a href="/message/{{ m.id }}">{{ m.subject }}</a></td>
+      <td>{{ m.date }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4">No messages found.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

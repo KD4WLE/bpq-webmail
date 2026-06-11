@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>Compose</h1>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="post" action="/compose">
+    <label>To</label>
+    <input name="to" value="{{ to }}" placeholder="CALLSIGN or address" required>
+    <label>Subject</label>
+    <input name="subject" value="{{ subject }}" required>
+    <label>Message</label>
+    <textarea name="body" rows="12" required>{{ body }}</textarea>
+    <button type="submit">Send</button>
+  </form>
+</div>
+{% endblock %}

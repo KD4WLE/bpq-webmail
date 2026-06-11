@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>Packet Message Access</h1>
+  {% if user %}
+    <p>Logged in as <strong>{{ user.username }}</strong> / {{ user.callsign }}.</p>
+    <p><a class="button" href="/inbox">Open inbox</a></p>
+  {% else %}
+    <p>Log in to access your LinBPQ mailbox.</p>
+    <p><a class="button" href="/login">Login</a></p>
+  {% endif %}
+</div>
+{% endblock %}
