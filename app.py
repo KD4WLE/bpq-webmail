@@ -868,3 +868,118 @@ def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refr
         },
     )
 
+
+
+@app.get("/admin/users/edit/{user_id}")
+def admin_edit_user_form(request: Request, user_id: int):
+    admin = require_user(request)
+    if not admin["is_admin"]:
+        return RedirectResponse("/dashboard", status_code=303)
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    user = conn.execute("select * from users where id=?", (user_id,)).fetchone()
+    conn.close()
+
+    if not user:
+        return RedirectResponse("/admin/users", status_code=303)
+
+    return templates.TemplateResponse(
+        "admin_user_edit.html",
+        {"request": request, "user": admin, "edit_user": user},
+    )
+
+
+@app.post("/admin/users/edit/{user_id}")
+def admin_edit_user_save(
+    request: Request,
+    user_id: int,
+    username: str = Form(...),
+    callsign: str = Form(...),
+    bpq_user: str = Form(...),
+    bpq_password: str = Form(""),
+    approved: str = Form(None),
+    is_admin: str = Form(None),
+):
+    admin = require_user(request)
+    if not admin["is_admin"]:
+        return RedirectResponse("/dashboard", status_code=303)
+
+    conn = sqlite3.connect(DB_PATH)
+
+    if bpq_password.strip():
+        conn.execute(
+            """update users
+               set username=?, callsign=?, bpq_user=?, bpq_password=?, approved=?, is_admin=?
+               where id=?""",
+            (
+                username.strip(),
+                callsign.strip().upper(),
+                bpq_user.strip().upper(),
+                bpq_password.strip(),
+                1 if approved else 0,
+                1 if is_admin else 0,
+                user_id,
+            ),
+        )
+    else:
+        conn.execute(
+            """update users
+               set username=?, callsign=?, bpq_user=?, approved=?, is_admin=?
+               where id=?""",
+            (
+                username.strip(),
+                callsign.strip().upper(),
+                bpq_user.strip().upper(),
+                1 if approved else 0,
+                1 if is_admin else 0,
+                user_id,
+            ),
+        )
+
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@app.post("/admin/users/delete/{user_id}")
+def admin_delete_user(request: Request, user_id: int):
+    admin = require_user(request)
+    if not admin["is_admin"]:
+        return RedirectResponse("/dashboard", status_code=303)
+
+    # Do not allow deleting yourself.
+    if admin["id"] == user_id:
+        return RedirectResponse("/admin/users", status_code=303)
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("delete from users where id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@app.post("/admin/users/toggle-admin/{user_id}")
+def admin_toggle_admin(request: Request, user_id: int):
+    admin = require_user(request)
+    if not admin["is_admin"]:
+        return RedirectResponse("/dashboard", status_code=303)
+
+    # Do not allow removing your own admin status.
+    if admin["id"] == user_id:
+        return RedirectResponse("/admin/users", status_code=303)
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    user = conn.execute("select is_admin from users where id=?", (user_id,)).fetchone()
+
+    if user:
+        conn.execute(
+            "update users set is_admin=? where id=?",
+            (0 if user["is_admin"] else 1, user_id),
+        )
+        conn.commit()
+
+    conn.close()
+    return RedirectResponse("/admin/users", status_code=303)

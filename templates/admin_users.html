@@ -1,37 +1,70 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="card">
-  <h1>Users</h1>
-  <form method="post" action="/admin/users/add">
-    <h2>Add user</h2>
-    <label>Website username</label><input name="username" required>
-    <label>Website password</label><input name="password" type="password" required>
-    <label>Callsign</label><input name="callsign" required>
-    <label>BPQ POP3/SMTP user</label><input name="bpq_user" required>
-    <label>BPQ POP3 password</label><input name="bpq_password" type="password" required>
-    <label><input type="checkbox" name="approved" style="width:auto;"> Approved</label><br><br>
-    <button type="submit">Add user</button>
-  </form>
-</div>
+
+<h2>Admin Users</h2>
+<p class="muted">Create, approve, edit, delete, and manage admin access.</p>
+
+<form method="post" action="/admin/users/add">
+  <h3>Add User</h3>
+
+  <label>Website Username</label>
+  <input type="text" name="username" required>
+
+  <label>Website Password</label>
+  <input type="password" name="password" required>
+
+  <label>Callsign</label>
+  <input type="text" name="callsign" required>
+
+  <label>BPQ Username</label>
+  <input type="text" name="bpq_user" required>
+
+  <label>BPQ Password</label>
+  <input type="password" name="bpq_password" required>
+
+  <p>
+    <button type="submit">Add User</button>
+  </p>
+</form>
+
+<h3>Existing Users</h3>
+
 <table>
-  <thead><tr><th>Username</th><th>Callsign</th><th>BPQ User</th><th>Approved</th><th>Admin</th><th>Action</th></tr></thead>
-  <tbody>
+  <tr>
+    <th>ID</th>
+    <th>Username</th>
+    <th>Callsign</th>
+    <th>BPQ User</th>
+    <th>Approved</th>
+    <th>Admin</th>
+    <th>Actions</th>
+  </tr>
+
   {% for u in users %}
-    <tr>
-      <td>{{ u.username }}</td>
-      <td>{{ u.callsign }}</td>
-      <td>{{ u.bpq_user }}</td>
-      <td>{{ "yes" if u.approved else "no" }}</td>
-      <td>{{ "yes" if u.is_admin else "no" }}</td>
-      <td>
-        {% if not u.is_admin %}
-        <form method="post" action="/admin/users/{{ u.id }}/toggle">
-          <button type="submit">{{ "Disable" if u.approved else "Approve" }}</button>
-        </form>
-        {% endif %}
-      </td>
-    </tr>
+  <tr>
+    <td>{{ u.id }}</td>
+    <td>{{ u.username }}</td>
+    <td>{{ u.callsign }}</td>
+    <td>{{ u.bpq_user }}</td>
+    <td>{{ "Yes" if u.approved else "No" }}</td>
+    <td>{{ "Yes" if u.is_admin else "No" }}</td>
+    <td>
+      <a class="button" href="/admin/users/edit/{{ u.id }}">Edit</a>
+
+      <form method="post" action="/admin/users/toggle/{{ u.id }}" style="display:inline;">
+        <button type="submit">{{ "Disable" if u.approved else "Approve" }}</button>
+      </form>
+
+      <form method="post" action="/admin/users/toggle-admin/{{ u.id }}" style="display:inline;">
+        <button type="submit">{{ "Remove Admin" if u.is_admin else "Make Admin" }}</button>
+      </form>
+
+      <form method="post" action="/admin/users/delete/{{ u.id }}" style="display:inline;" onsubmit="return confirm('Delete this user?');">
+        <button type="submit">Delete</button>
+      </form>
+    </td>
+  </tr>
   {% endfor %}
-  </tbody>
 </table>
+
 {% endblock %}

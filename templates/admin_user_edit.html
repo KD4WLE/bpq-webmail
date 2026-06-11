@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Edit User</h2>
+
+<form method="post" action="/admin/users/edit/{{ edit_user.id }}">
+  <label>Website Username</label>
+  <input type="text" name="username" value="{{ edit_user.username }}" required>
+
+  <label>Callsign</label>
+  <input type="text" name="callsign" value="{{ edit_user.callsign }}" required>
+
+  <label>BPQ Username</label>
+  <input type="text" name="bpq_user" value="{{ edit_user.bpq_user }}" required>
+
+  <label>BPQ Password</label>
+  <input type="password" name="bpq_password" placeholder="Leave blank to keep current BPQ password">
+
+  <label>
+    <input type="checkbox" name="approved" {% if edit_user.approved %}checked{% endif %}>
+    Approved
+  </label>
+
+  <label>
+    <input type="checkbox" name="is_admin" {% if edit_user.is_admin %}checked{% endif %}>
+    Admin
+  </label>
+
+  <p>
+    <button type="submit">Save Changes</button>
+    <a class="button" href="/admin/users">Cancel</a>
+  </p>
+</form>
+
+{% endblock %}
