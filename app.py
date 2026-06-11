@@ -31,6 +31,7 @@ BPQ_POP3_HOST = env("BPQ_POP3_HOST", "127.0.0.1")
 BPQ_POP3_PORT = int(env("BPQ_POP3_PORT", "110"))
 BPQ_SMTP_HOST = env("BPQ_SMTP_HOST", "127.0.0.1")
 BPQ_SMTP_PORT = int(env("BPQ_SMTP_PORT", "25"))
+PORTAL_TAGLINE = env("PORTAL_TAGLINE", "Sent via the BPQ Web Portal")
 SESSION_SECRET = env("SESSION_SECRET", "dev-change-me")
 APP_ADMIN_USERNAME = env("APP_ADMIN_USERNAME", "admin")
 from dotenv import load_dotenv
@@ -251,6 +252,9 @@ def compose_send(request: Request, to: str = Form(...), subject: str = Form(...)
         output += tn.read_very_eager().decode(errors="ignore")
 
         clean_body = body.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+        if PORTAL_TAGLINE:
+            clean_body += f"\n\n---\n{PORTAL_TAGLINE}"
 
         for line in clean_body.split("\n"):
             tn.write((line + "\r").encode())
