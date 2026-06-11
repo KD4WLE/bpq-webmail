@@ -462,6 +462,32 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
         except Exception as e:
             error = f"Could not load bulletins from BBS: {e}"
 
+    with db() as conn:
+        prefs = conn.execute(
+            "select hidden_categories, hidden_areas, hidden_senders, page_size from bulletin_preferences where user_id=?",
+            (user["id"],),
+        ).fetchone()
+
+    hidden_categories = set()
+    hidden_areas = set()
+    hidden_senders = set()
+    per_page = 25
+
+    if prefs:
+        hidden_categories = {x.strip().upper() for x in (prefs["hidden_categories"] or "").split(",") if x.strip()}
+        hidden_areas = {x.strip().upper() for x in (prefs["hidden_areas"] or "").split(",") if x.strip()}
+        hidden_senders = {x.strip().upper() for x in (prefs["hidden_senders"] or "").split(",") if x.strip()}
+        per_page = prefs["page_size"] or 25
+
+    if hidden_categories:
+        messages = [m for m in messages if m["category"].strip().upper() not in hidden_categories]
+
+    if hidden_areas:
+        messages = [m for m in messages if m["area"].strip().upper() not in hidden_areas]
+
+    if hidden_senders:
+        messages = [m for m in messages if m["from"].strip().upper() not in hidden_senders]
+
     category = category.strip().upper()
     q = q.strip()
 
@@ -480,7 +506,6 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
 
     categories = sorted(set(m["category"] for m in messages))
 
-    per_page = 15
     total_messages = len(messages)
     total_pages = max(1, (total_messages + per_page - 1) // per_page)
     page = max(1, min(page, total_pages))
