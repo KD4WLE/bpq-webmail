@@ -1,0 +1,7 @@
+*.bak.*
+*.backup
+*.broken-cache.*
+__pycache__/
+*.pyc
+.venv/
+bpq_webmail.db

@@ -752,55 +752,79 @@ def node_status(request: Request):
     )
 
 
+
+NODE_CACHE = {
+    "timestamp": 0,
+    "nodes": [],
+    "raw_output": "",
+}
+
+NODE_CACHE_SECONDS = 300
+
 @app.get("/nodes")
-def nodes(request: Request, q: str = Query("")):
+def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refresh: int = Query(0)):
     user = require_user(request)
     error = None
     raw_output = ""
     nodes = []
 
+    now = time.time()
+
     try:
-        tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=15)
+        cache_valid = (
+            refresh != 1
+            and NODE_CACHE["nodes"]
+            and now - NODE_CACHE["timestamp"] < NODE_CACHE_SECONDS
+        )
 
-        tn.read_until(b"Username:", timeout=10)
-        tn.write((user["bpq_user"] + "\r").encode())
+        if cache_valid:
+            nodes = NODE_CACHE["nodes"]
+            raw_output = NODE_CACHE["raw_output"]
+        else:
+            tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=15)
 
-        tn.read_until(b"Password:", timeout=10)
-        tn.write((user["bpq_password"] + "\r").encode())
+            tn.read_until(b"Username:", timeout=10)
+            tn.write((user["bpq_user"] + "\r").encode())
 
-        time.sleep(1)
-        tn.read_very_eager()
+            tn.read_until(b"Password:", timeout=10)
+            tn.write((user["bpq_password"] + "\r").encode())
 
-        tn.write(b"nodes\r")
-        time.sleep(4)
-        raw_output = tn.read_very_eager().decode(errors="ignore")
+            time.sleep(1)
+            tn.read_very_eager()
 
-        tn.write(b"bye\r")
-        tn.close()
+            tn.write(b"nodes\r")
+            time.sleep(4)
+            raw_output = tn.read_very_eager().decode(errors="ignore")
 
-        for line in raw_output.splitlines():
-            clean = line.strip()
+            tn.write(b"bye\r")
+            tn.close()
 
-            if not clean:
-                continue
+            for line in raw_output.splitlines():
+                clean = line.strip()
 
-            if clean.startswith("TITUS1:") or clean == "Nodes":
-                continue
+                if not clean:
+                    continue
 
-            for token in clean.split():
-                if ":" in token:
-                    alias, callsign = token.split(":", 1)
-                    nodes.append({
-                        "alias": alias.strip(),
-                        "callsign": callsign.strip(),
-                    })
-                elif "-" in token or token.isalnum():
-                    # Handles entries like KC4NWK-2 that have no alias prefix
-                    if token not in ["Nodes"]:
+                if clean.startswith("TITUS1:") or clean == "Nodes":
+                    continue
+
+                for token in clean.split():
+                    if ":" in token:
+                        alias, callsign = token.split(":", 1)
                         nodes.append({
-                            "alias": "",
-                            "callsign": token.strip(),
+                            "alias": alias.strip(),
+                            "callsign": callsign.strip(),
                         })
+                    elif "-" in token or token.isalnum():
+                        if token not in ["Nodes"]:
+                            nodes.append({
+                                "alias": "",
+                                "callsign": token.strip(),
+                            })
+
+            NODE_CACHE["timestamp"] = time.time()
+            NODE_CACHE["nodes"] = nodes
+            NODE_CACHE["raw_output"] = raw_output
 
         q_clean = q.strip().lower()
         if q_clean:
@@ -813,15 +837,34 @@ def nodes(request: Request, q: str = Query("")):
     except Exception as e:
         error = f"Could not load nodes: {e}"
 
+    per_page = 25
+    total_nodes = len(nodes)
+    total_pages = max(1, (total_nodes + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    page_nodes = nodes[start_idx:end_idx]
+
+    cache_age = int(time.time() - NODE_CACHE["timestamp"]) if NODE_CACHE["timestamp"] else None
+
     return templates.TemplateResponse(
         "nodes.html",
         {
             "request": request,
             "user": user,
-            "nodes": nodes,
+            "nodes": page_nodes,
             "q": q,
             "error": error,
             "raw_output": raw_output,
-            "total_nodes": len(nodes),
+            "total_nodes": total_nodes,
+            "page": page,
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages,
+            "prev_page": page - 1,
+            "next_page": page + 1,
+            "cache_age": cache_age,
+            "cache_seconds": NODE_CACHE_SECONDS,
         },
     )
+

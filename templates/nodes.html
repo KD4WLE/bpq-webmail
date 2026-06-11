@@ -4,14 +4,25 @@
 <h2>Nodes</h2>
 <p class="muted">Known BPQ nodes from the node command.</p>
 
+<div class="cache-notice">
+  {% if cache_age is none %}
+    Building node cache from BPQ. This may take a few seconds...
+  {% else %}
+    Node cache loaded {{ cache_age }} seconds ago.
+  {% endif %}
+</div>
+
 <form method="get" action="/nodes" class="filter-form">
   <input type="text" name="q" value="{{ q }}" placeholder="Search alias or callsign">
   <button type="submit">Search</button>
   <a class="button" href="/nodes">Clear</a>
-  <a class="button" href="/nodes">Refresh</a>
+  <a class="button" href="/nodes?refresh=1">Refresh</a>
 </form>
 
-<p class="muted">{{ total_nodes }} nodes shown.</p>
+<p class="muted">
+  Showing {{ nodes|length }} of {{ total_nodes }} nodes.
+  Page {{ page }} of {{ total_pages }}.
+</p>
 
 {% if error %}
   <div class="error">{{ error }}</div>
@@ -30,6 +41,17 @@
   </tr>
   {% endfor %}
 </table>
+
+<div class="pager">
+  {% if has_prev %}
+    <a class="button" href="/nodes?page={{ prev_page }}{% if q %}&q={{ q }}{% endif %}">← Previous</a>
+  {% endif %}
+
+  {% if has_next %}
+    <a class="button" href="/nodes?page={{ next_page }}{% if q %}&q={{ q }}{% endif %}">Next →</a>
+  {% endif %}
+</div>
+
 {% else %}
   <div class="card">
     <h3>No nodes found</h3>
