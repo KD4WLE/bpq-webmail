@@ -709,23 +709,7 @@ def connections(request: Request):
     error = None
 
     try:
-        tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
-
-        tn.read_until(b"Username:", timeout=10)
-        tn.write((user["bpq_user"] + "\r").encode())
-
-        tn.read_until(b"Password:", timeout=10)
-        tn.write((user["bpq_password"] + "\r").encode())
-
-        time.sleep(1)
-        tn.read_very_eager()
-
-        tn.write(b"users\r")
-        time.sleep(2)
-        output = tn.read_very_eager().decode(errors="ignore")
-
-        tn.write(b"bye\r")
-        tn.close()
+        output = bpq_command(user, "users", timeout=10, settle=1.0)
 
         for line in output.splitlines():
             line = line.strip()
