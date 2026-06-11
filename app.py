@@ -895,6 +895,23 @@ def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refr
 
 
 
+
+@app.get("/admin/users")
+def admin_users(request: Request):
+    user = require_user(request)
+    if not user["is_admin"]:
+        return RedirectResponse("/", status_code=303)
+
+    with db() as conn:
+        users = conn.execute(
+            "select id, username, callsign, bpq_user, approved, is_admin from users order by username"
+        ).fetchall()
+
+    return templates.TemplateResponse(
+        "admin_users.html",
+        {"request": request, "user": user, "users": users},
+    )
+
 @app.get("/admin/users/edit/{user_id}")
 def admin_edit_user_form(request: Request, user_id: int):
     admin = require_user(request)
