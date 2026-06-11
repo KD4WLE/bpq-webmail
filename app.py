@@ -38,6 +38,24 @@ from dotenv import load_dotenv
 load_dotenv()
 APP_ADMIN_PASSWORD = env("APP_ADMIN_PASSWORD", "change-me-now")
 
+
+# Simple in-process TTL cache for slow BPQ/telnet views
+_CACHE = {}
+
+def ttl_cache_get(key, ttl_seconds):
+    item = _CACHE.get(key)
+    if not item:
+        return None
+    ts, value = item
+    if time.time() - ts > ttl_seconds:
+        _CACHE.pop(key, None)
+        return None
+    return value
+
+def ttl_cache_set(key, value):
+    _CACHE[key] = (time.time(), value)
+    return value
+
 app = FastAPI(title="BPQ Webmail")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -339,6 +357,10 @@ LB_CACHE_SECONDS = 60
 
 @app.get("/bulletins")
 def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query(0), category: str = Query(""), q: str = Query("")):
+    cached = ttl_cache_get("bulletins", 30)
+    if cached is not None:
+        return cached
+
     user = require_user(request)
     messages = []
     error = None
@@ -426,7 +448,7 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
     end_idx = start_idx + per_page
     page_messages = messages[start_idx:end_idx]
 
-    return templates.TemplateResponse(
+    return ttl_cache_set("bulletins", templates.TemplateResponse(
         "bulletins.html",
         {
             "request": request,
@@ -446,7 +468,7 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
             "q": q,
             "categories": categories,
         },
-    )
+    ))
 
 @app.get("/bulletin/{msg_id}")
 def read_bulletin(request: Request, msg_id: int):
@@ -494,6 +516,10 @@ def read_bulletin(request: Request, msg_id: int):
 
 @app.get("/mheard")
 def mheard(request: Request, port: str = Query("all")):
+    cached = ttl_cache_get("mheard", 20)
+    if cached is not None:
+        return cached
+
     user = require_user(request)
     ports = {
         "1": "AX/IP/UDP",
@@ -544,7 +570,7 @@ def mheard(request: Request, port: str = Query("all")):
     except Exception as e:
         error = f"Could not load MHeard list: {e}"
 
-    return templates.TemplateResponse(
+    return ttl_cache_set("mheard", templates.TemplateResponse(
         "mheard.html",
         {
             "request": request,
@@ -554,7 +580,7 @@ def mheard(request: Request, port: str = Query("all")):
             "heard": heard,
             "error": error,
         },
-    )
+    ))
 
 
 def refresh_bulletin_cache_background():
@@ -636,6 +662,10 @@ def start_bulletin_cache_worker():
 
 @app.get("/connections")
 def connections(request: Request):
+    cached = ttl_cache_get("connections", 10)
+    if cached is not None:
+        return cached
+
     user = require_user(request)
     lines = []
     circuits = []
@@ -685,7 +715,7 @@ def connections(request: Request):
     except Exception as e:
         error = f"Could not load live connections: {e}"
 
-    return templates.TemplateResponse(
+    return ttl_cache_set("connections", templates.TemplateResponse(
         "connections.html",
         {
             "request": request,
@@ -695,7 +725,7 @@ def connections(request: Request):
             "lines": lines,
             "error": error,
         },
-    )
+    ))
 
 
 @app.get("/node")
@@ -788,6 +818,10 @@ NODE_CACHE_SECONDS = 300
 
 @app.get("/nodes")
 def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refresh: int = Query(0)):
+    cached = ttl_cache_get("nodes", 30)
+    if cached is not None:
+        return cached
+
     user = require_user(request)
     error = None
     raw_output = ""
@@ -872,7 +906,7 @@ def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refr
 
     cache_age = int(time.time() - NODE_CACHE["timestamp"]) if NODE_CACHE["timestamp"] else None
 
-    return templates.TemplateResponse(
+    return ttl_cache_set("nodes", templates.TemplateResponse(
         "nodes.html",
         {
             "request": request,
@@ -891,7 +925,7 @@ def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refr
             "cache_age": cache_age,
             "cache_seconds": NODE_CACHE_SECONDS,
         },
-    )
+    ))
 
 
 
