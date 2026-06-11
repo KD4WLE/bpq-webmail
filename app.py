@@ -401,10 +401,6 @@ LB_CACHE_SECONDS = 60
 
 @app.get("/bulletins")
 def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query(0), category: str = Query(""), q: str = Query("")):
-    cached = ttl_cache_get("bulletins", 30)
-    if cached is not None:
-        return cached
-
     user = require_user(request)
     messages = []
     error = None
