@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Bulletins</h2>
+
+<p class="muted">
+  Showing {{ messages|length }} of {{ total_messages }} bulletins.
+  Page {{ page }} of {{ total_pages }}.
+</p>
+
+<div class="cache-notice">
+  {% if cache_age is none %}
+    Building bulletin cache from BBS. This may take a few seconds...
+  {% else %}
+    Bulletin cache loaded {{ cache_age }} seconds ago.
+  {% endif %}
+</div>
+
+<form method="get" action="/bulletins" class="filter-form">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search subject, sender, category, or area">
+  <input type="hidden" name="category" value="{{ category }}">
+  <button type="submit">Search</button>
+  <a class="button" href="/bulletins">Clear</a>
+  <a class="button" href="/bulletins?refresh=1">Refresh</a>
+</form>
+
+<div class="category-pills">
+  <a class="pill {% if not category %}active{% endif %}" href="/bulletins">All</a>
+  {% for c in categories %}
+    <a class="pill {% if category == c %}active{% endif %}" href="/bulletins?category={{ c }}{% if q %}&q={{ q }}{% endif %}">
+      {{ c }}
+    </a>
+  {% endfor %}
+</div>
+
+{% if error %}
+  <div class="error">{{ error }}</div>
+{% endif %}
+
+{% if messages %}
+<table>
+  <tr>
+    <th>Msg #</th>
+    <th>Date</th>
+    <th>Type</th>
+    <th>Size</th>
+    <th>Category</th>
+    <th>Area</th>
+    <th>From</th>
+    <th>Subject</th>
+  </tr>
+  {% for m in messages %}
+  <tr>
+    <td><a href="/bulletin/{{ m.id }}">{{ m.id }}</a></td>
+    <td>{{ m.date }}</td>
+    <td>{{ m.type }}</td>
+    <td>{{ m.size }}</td>
+    <td>{{ m.category }}</td>
+    <td>{{ m.area }}</td>
+    <td>{{ m.from }}</td>
+    <td>{{ m.subject }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<div class="pager">
+  {% if has_prev %}
+    <a class="button" href="/bulletins?page={{ prev_page }}{% if category %}&category={{ category }}{% endif %}{% if q %}&q={{ q }}{% endif %}">← Previous</a>
+  {% endif %}
+
+  {% if has_next %}
+    <a class="button" href="/bulletins?page={{ next_page }}{% if category %}&category={{ category }}{% endif %}{% if q %}&q={{ q }}{% endif %}">Next →</a>
+  {% endif %}
+</div>
+
+{% else %}
+  <div class="card">
+    <h3>No bulletins found</h3>
+    <p class="muted">Try clearing the search or changing category.</p>
+  </div>
+{% endif %}
+
+{% endblock %}

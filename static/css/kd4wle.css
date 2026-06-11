@@ -316,3 +316,75 @@ pre {
 .dash-icon {
   font-size: 2rem;
 }
+
+.pager {
+  display: flex;
+  gap: 12px;
+  margin-top: 18px;
+  align-items: center;
+}
+
+.cache-notice {
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #fbbf24;
+  padding: 12px 14px;
+  border-radius: 12px;
+  margin: 14px 0 18px;
+  font-weight: 600;
+}
+
+.filter-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 18px 0;
+}
+
+.filter-form input[type="text"] {
+  margin: 0;
+}
+
+.category-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 14px 0 20px;
+}
+
+.pill {
+  padding: 7px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: var(--panel-soft);
+  font-weight: 700;
+  font-size: .9rem;
+}
+
+.pill:hover,
+.pill.active {
+  background: var(--accent);
+  color: #111827;
+  text-decoration: none;
+}
+
+.bulletin-view {
+  background: #020617;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  margin-top: 16px;
+}
+
+.bulletin-view pre {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  line-height: 1.45;
+  font-size: .95rem;
+}

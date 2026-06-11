@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>MHeard</h2>
+<p class="muted">Stations recently heard by BPQ port.</p>
+
+<div class="category-pills">
+  <a class="pill {% if selected_port == 'all' %}active{% endif %}" href="/mheard">All</a>
+  {% for pnum, pname in ports.items() %}
+    <a class="pill {% if selected_port == pnum %}active{% endif %}" href="/mheard?port={{ pnum }}">
+      Port {{ pnum }}
+    </a>
+  {% endfor %}
+</div>
+
+{% if error %}
+  <div class="error">{{ error }}</div>
+{% endif %}
+
+{% if heard %}
+<table>
+  <tr>
+    <th>Port</th>
+    <th>Port Name</th>
+    <th>Callsign</th>
+    <th>Last Heard</th>
+    <th>Extra</th>
+  </tr>
+  {% for h in heard %}
+  <tr>
+    <td>{{ h.port }}</td>
+    <td>{{ h.port_name }}</td>
+    <td>{{ h.callsign }}</td>
+    <td>{{ h.last_heard }}</td>
+    <td>{{ h.extra }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+  <div class="card">
+    <h3>No stations heard</h3>
+    <p class="muted">No MHeard entries were returned for this port.</p>
+  </div>
+{% endif %}
+
+{% endblock %}

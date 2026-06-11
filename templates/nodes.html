@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Nodes</h2>
+<p class="muted">Known BPQ nodes from the node command.</p>
+
+<form method="get" action="/nodes" class="filter-form">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search alias or callsign">
+  <button type="submit">Search</button>
+  <a class="button" href="/nodes">Clear</a>
+  <a class="button" href="/nodes">Refresh</a>
+</form>
+
+<p class="muted">{{ total_nodes }} nodes shown.</p>
+
+{% if error %}
+  <div class="error">{{ error }}</div>
+{% endif %}
+
+{% if nodes %}
+<table>
+  <tr>
+    <th>Alias</th>
+    <th>Callsign</th>
+  </tr>
+  {% for n in nodes %}
+  <tr>
+    <td>{{ n.alias }}</td>
+    <td>{{ n.callsign }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+  <div class="card">
+    <h3>No nodes found</h3>
+    <p class="muted">Try clearing the search.</p>
+    {% if raw_output %}
+      <pre>{{ raw_output }}</pre>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% endblock %}

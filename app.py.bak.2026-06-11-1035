@@ -1,0 +1,360 @@
+from dotenv import load_dotenv
+load_dotenv()
+from fastapi.staticfiles import StaticFiles
+import os
+import sqlite3
+import poplib
+import smtplib
+from email.parser import BytesParser
+from email.policy import default
+from email.message import EmailMessage
+from pathlib import Path
+from typing import Optional
+
+from fastapi import FastAPI, Request, Form, HTTPException
+from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
+from passlib.context import CryptContext
+from itsdangerous import URLSafeSerializer, BadSignature
+
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "bpq_webmail.db"
+
+def env(name: str, default_value: str) -> str:
+    return os.environ.get(name, default_value)
+
+BPQ_POP3_HOST = env("BPQ_POP3_HOST", "127.0.0.1")
+BPQ_POP3_PORT = int(env("BPQ_POP3_PORT", "110"))
+BPQ_SMTP_HOST = env("BPQ_SMTP_HOST", "127.0.0.1")
+BPQ_SMTP_PORT = int(env("BPQ_SMTP_PORT", "25"))
+SESSION_SECRET = env("SESSION_SECRET", "dev-change-me")
+APP_ADMIN_USERNAME = env("APP_ADMIN_USERNAME", "admin")
+from dotenv import load_dotenv
+load_dotenv()
+APP_ADMIN_PASSWORD = env("APP_ADMIN_PASSWORD", "change-me-now")
+
+app = FastAPI(title="BPQ Webmail")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+signer = URLSafeSerializer(SESSION_SECRET, salt="bpq-webmail-session")
+
+
+def db() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db() -> None:
+    with db() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                callsign TEXT NOT NULL,
+                bpq_user TEXT NOT NULL,
+                bpq_password TEXT NOT NULL,
+                approved INTEGER NOT NULL DEFAULT 0,
+                is_admin INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        row = conn.execute("SELECT id FROM users WHERE username = ?", (APP_ADMIN_USERNAME,)).fetchone()
+        if row is None:
+            conn.execute(
+                """
+                INSERT INTO users
+                (username, password_hash, callsign, bpq_user, bpq_password, approved, is_admin)
+                VALUES (?, ?, ?, ?, ?, 1, 1)
+                """,
+                (
+                    APP_ADMIN_USERNAME,
+                    pwd_context.hash(APP_ADMIN_PASSWORD),
+                    "ADMIN",
+                    "ADMIN",
+                    "unused",
+                ),
+            )
+
+
+@app.on_event("startup")
+def startup() -> None:
+    init_db()
+
+
+def get_session_user(request: Request) -> Optional[sqlite3.Row]:
+    cookie = request.cookies.get("bpq_session")
+    if not cookie:
+        return None
+    try:
+        data = signer.loads(cookie)
+    except BadSignature:
+        return None
+    user_id = data.get("user_id")
+    with db() as conn:
+        return conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+
+
+def require_user(request: Request) -> sqlite3.Row:
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=303, headers={"Location": "/login"})
+    if not user["approved"]:
+        raise HTTPException(status_code=403, detail="Account is not approved yet.")
+    return user
+
+
+def require_admin(request: Request) -> sqlite3.Row:
+    user = require_user(request)
+    if not user["is_admin"]:
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return user
+
+
+def parse_pop_message(raw_lines: list[bytes]) -> dict:
+    raw = b"\r\n".join(raw_lines)
+    msg = BytesParser(policy=default).parsebytes(raw)
+    body = ""
+    if msg.is_multipart():
+        for part in msg.walk():
+            if part.get_content_type() == "text/plain" and not part.get_filename():
+                body = part.get_content()
+                break
+    else:
+        try:
+            body = msg.get_content()
+        except Exception:
+            body = raw.decode(errors="replace")
+    return {
+        "subject": msg.get("subject", "(no subject)"),
+        "from": msg.get("from", ""),
+        "to": msg.get("to", ""),
+        "date": msg.get("date", ""),
+        "body": body,
+    }
+
+
+def pop3_client(user: sqlite3.Row) -> poplib.POP3:
+    client = poplib.POP3(BPQ_POP3_HOST, BPQ_POP3_PORT, timeout=10)
+    client.user(user["bpq_user"])
+    client.pass_(user["bpq_password"])
+    return client
+
+
+@app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    user = get_session_user(request)
+    return templates.TemplateResponse("home.html", {"request": request, "user": user})
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_form(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+
+
+@app.post("/login")
+def login(request: Request, username: str = Form(...), password: str = Form(...)):
+    with db() as conn:
+        user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+    if not user or not pwd_context.verify(password, user["password_hash"]):
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid username or password."})
+    if not user["approved"]:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Account is waiting for approval."})
+    resp = RedirectResponse("/inbox", status_code=303)
+    resp.set_cookie("bpq_session", signer.dumps({"user_id": user["id"]}), httponly=True, samesite="lax")
+    return resp
+
+
+@app.get("/logout")
+def logout():
+    resp = RedirectResponse("/", status_code=303)
+    resp.delete_cookie("bpq_session")
+    return resp
+
+
+@app.get("/inbox", response_class=HTMLResponse)
+def inbox(request: Request):
+    user = require_user(request)
+    messages = []
+    error = None
+    try:
+        client = pop3_client(user)
+        count, _ = client.stat()
+        for idx in range(1, count + 1):
+            # TOP gets headers plus 0 body lines, if supported by the server.
+            try:
+                _, lines, _ = client.top(idx, 0)
+            except Exception:
+                _, lines, _ = client.retr(idx)
+            parsed = parse_pop_message(lines)
+            messages.append({"id": idx, **parsed})
+        client.quit()
+    except Exception as exc:
+        error = f"Could not connect to LinBPQ POP3: {exc}"
+    messages.reverse()
+    return templates.TemplateResponse("inbox.html", {"request": request, "user": user, "messages": messages, "error": error})
+
+
+@app.get("/message/{message_id}", response_class=HTMLResponse)
+def message(request: Request, message_id: int):
+    user = require_user(request)
+    try:
+        client = pop3_client(user)
+        _, lines, _ = client.retr(message_id)
+        parsed = parse_pop_message(lines)
+        client.quit()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not read message: {exc}")
+    return templates.TemplateResponse("message.html", {"request": request, "user": user, "message": parsed, "message_id": message_id})
+
+
+@app.get("/compose", response_class=HTMLResponse)
+def compose_form(request: Request, to: str = "", subject: str = ""):
+    user = require_user(request)
+    return templates.TemplateResponse("compose.html", {"request": request, "user": user, "to": to, "subject": subject, "body": "", "error": None})
+
+
+@app.post("/compose", response_class=HTMLResponse)
+def compose_send(request: Request, to: str = Form(...), subject: str = Form(...), body: str = Form(...)):
+    user = require_user(request)
+    try:
+        msg = EmailMessage()
+        msg["From"] = user["callsign"]
+        msg["To"] = to
+        msg["Subject"] = subject
+        msg.set_content(body)
+        with smtplib.SMTP(BPQ_SMTP_HOST, BPQ_SMTP_PORT, timeout=10) as smtp:
+            # Many local BPQ SMTP setups do not require AUTH from localhost.
+            smtp.send_message(msg)
+        return RedirectResponse("/inbox", status_code=303)
+    except Exception as exc:
+        return templates.TemplateResponse("compose.html", {"request": request, "user": user, "to": to, "subject": subject, "body": body, "error": f"Could not send via LinBPQ SMTP: {exc}"})
+
+
+@app.get("/admin/users", response_class=HTMLResponse)
+def admin_users(request: Request):
+    require_admin(request)
+    with db() as conn:
+        users = conn.execute("SELECT * FROM users ORDER BY username").fetchall()
+    return templates.TemplateResponse("admin_users.html", {"request": request, "users": users})
+
+
+@app.post("/admin/users/add")
+def admin_add_user(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    callsign: str = Form(...),
+    bpq_user: str = Form(...),
+    bpq_password: str = Form(...),
+    approved: Optional[str] = Form(None),
+):
+    require_admin(request)
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT INTO users
+            (username, password_hash, callsign, bpq_user, bpq_password, approved, is_admin)
+            VALUES (?, ?, ?, ?, ?, ?, 0)
+            """,
+            (username, pwd_context.hash(password), callsign.upper(), bpq_user.upper(), bpq_password, 1 if approved else 0),
+        )
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@app.post("/admin/users/{user_id}/toggle")
+def admin_toggle_user(request: Request, user_id: int):
+    admin = require_admin(request)
+    if admin["id"] == user_id:
+        return RedirectResponse("/admin/users", status_code=303)
+    with db() as conn:
+        user = conn.execute("SELECT approved FROM users WHERE id = ?", (user_id,)).fetchone()
+        if user:
+            conn.execute("UPDATE users SET approved = ? WHERE id = ?", (0 if user["approved"] else 1, user_id))
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@app.get("/dashboard")
+def dashboard(request: Request):
+    user = require_user(request)
+
+    conn = sqlite3.connect(DB_PATH)
+    total_users = conn.execute("select count(*) from users").fetchone()[0]
+    approved_users = conn.execute("select count(*) from users where approved=1").fetchone()[0]
+    conn.close()
+
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "user": user,
+            "total_users": total_users,
+            "approved_users": approved_users,
+            "portal_version": "v0.2",
+        },
+    )
+
+
+@app.get("/bulletins")
+def bulletins(request: Request):
+    user = require_user(request)
+    messages = []
+    error = None
+
+    try:
+        pop = pop3_client(user)
+        _resp, listings, _octets = pop.list()
+
+        for item in listings:
+            parts = item.decode(errors="ignore").split()
+            if not parts:
+                continue
+
+            msg_num = int(parts[0])
+            size = parts[1] if len(parts) > 1 else ""
+
+            try:
+                _resp, lines, _octets = pop.retr(msg_num)
+                raw = b"\n".join(lines)
+                parsed = BytesParser(policy=email_default_policy).parsebytes(raw)
+
+                to_addr = str(parsed.get("to", "") or "")
+                subject = str(parsed.get("subject", "") or "")
+                from_addr = str(parsed.get("from", "") or "")
+                date = str(parsed.get("date", "") or "")
+
+                # Heuristic: show messages that look like BPQ/FBB-style bulletins.
+                # This can be refined later once we see how LinBPQ presents your bulletin areas.
+                bulletin_targets = ["ALL", "BULL", "BULLETIN", "QST", "LOCAL", "USA", "WW"]
+                looks_like_bulletin = any(t in to_addr.upper() for t in bulletin_targets)
+
+                if looks_like_bulletin:
+                    messages.append({
+                        "id": msg_num,
+                        "from": from_addr,
+                        "to": to_addr,
+                        "subject": subject,
+                        "date": date,
+                        "size": size,
+                    })
+
+            except Exception:
+                continue
+
+        pop.quit()
+
+    except Exception as e:
+        error = f"Could not load bulletins: {e}"
+
+    return templates.TemplateResponse(
+        "bulletins.html",
+        {
+            "request": request,
+            "user": user,
+            "messages": messages,
+            "error": error,
+        },
+    )

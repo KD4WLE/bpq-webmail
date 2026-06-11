@@ -5,7 +5,6 @@ import os
 import sqlite3
 import telnetlib
 import time
-import threading
 import re as _re
 import poplib
 import smtplib
@@ -297,9 +296,7 @@ def dashboard(request: Request):
             "user": user,
             "total_users": total_users,
             "approved_users": approved_users,
-            "portal_version": "v0.3",
-            "bulletin_count": len(LB_CACHE["messages"]) if "LB_CACHE" in globals() else 0,
-            "latest_bulletin": LB_CACHE["messages"][0]["id"] if "LB_CACHE" in globals() and LB_CACHE["messages"] else "Unknown",
+            "portal_version": "v0.2",
         },
     )
 
@@ -313,7 +310,7 @@ LB_CACHE = {
 LB_CACHE_SECONDS = 60
 
 @app.get("/bulletins")
-def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query(0), category: str = Query(""), q: str = Query("")):
+def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query(0)):
     user = require_user(request)
     messages = []
     error = None
@@ -375,24 +372,6 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
         except Exception as e:
             error = f"Could not load bulletins from BBS: {e}"
 
-    category = category.strip().upper()
-    q = q.strip()
-
-    if category:
-        messages = [m for m in messages if m["category"].upper() == category]
-
-    if q:
-        q_lower = q.lower()
-        messages = [
-            m for m in messages
-            if q_lower in m["subject"].lower()
-            or q_lower in m["from"].lower()
-            or q_lower in m["category"].lower()
-            or q_lower in m["area"].lower()
-        ]
-
-    categories = sorted(set(m["category"] for m in messages))
-
     per_page = 15
     total_messages = len(messages)
     total_pages = max(1, (total_messages + per_page - 1) // per_page)
@@ -417,9 +396,6 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
             "prev_page": page - 1,
             "next_page": page + 1,
             "cache_age": int(time.time() - LB_CACHE["timestamp"]) if LB_CACHE["timestamp"] else None,
-            "category": category,
-            "q": q,
-            "categories": categories,
         },
     )
 
@@ -463,365 +439,5 @@ def read_bulletin(request: Request, msg_id: int):
             "msg_id": msg_id,
             "body": body,
             "error": error,
-        },
-    )
-
-
-@app.get("/mheard")
-def mheard(request: Request, port: str = Query("all")):
-    user = require_user(request)
-    ports = {
-        "1": "AX/IP/UDP",
-        "2": "Internet Gateway",
-        "8": "HF 20/40/80m VARA",
-        "9": "Net44",
-        "10": "AREDN",
-    }
-
-    selected_ports = list(ports.keys()) if port == "all" else [port]
-    heard = []
-    error = None
-
-    try:
-        tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
-
-        tn.read_until(b"Username:", timeout=10)
-        tn.write((user["bpq_user"] + "\r").encode())
-
-        tn.read_until(b"Password:", timeout=10)
-        tn.write((user["bpq_password"] + "\r").encode())
-
-        time.sleep(1)
-        tn.read_very_eager()
-
-        for pnum in selected_ports:
-            if pnum not in ports:
-                continue
-
-            tn.write((f"mh {pnum}\r").encode())
-            time.sleep(1)
-            output = tn.read_very_eager().decode(errors="ignore")
-
-            for line in output.splitlines():
-                parts = line.split()
-                if len(parts) >= 2 and ":" in parts[1]:
-                    heard.append({
-                        "port": pnum,
-                        "port_name": ports[pnum],
-                        "callsign": parts[0],
-                        "last_heard": parts[1],
-                        "extra": " ".join(parts[2:]) if len(parts) > 2 else "",
-                    })
-
-        tn.write(b"bye\r")
-        tn.close()
-
-    except Exception as e:
-        error = f"Could not load MHeard list: {e}"
-
-    return templates.TemplateResponse(
-        "mheard.html",
-        {
-            "request": request,
-            "user": user,
-            "ports": ports,
-            "selected_port": port,
-            "heard": heard,
-            "error": error,
-        },
-    )
-
-
-def refresh_bulletin_cache_background():
-    while True:
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            user = conn.execute(
-                "select * from users where is_admin=1 and approved=1 order by id limit 1"
-            ).fetchone()
-            conn.close()
-
-            if user:
-                messages = []
-                raw_output = ""
-
-                tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
-
-                tn.read_until(b"Username:", timeout=10)
-                tn.write((user["bpq_user"] + "\r").encode())
-
-                tn.read_until(b"Password:", timeout=10)
-                tn.write((user["bpq_password"] + "\r").encode())
-
-                time.sleep(1)
-                tn.read_very_eager()
-
-                tn.write(b"bbs\r")
-                time.sleep(1)
-                tn.read_very_eager()
-
-                tn.write(b"lb\r")
-                time.sleep(4)
-                raw_output = tn.read_very_eager().decode(errors="ignore")
-
-                tn.write(b"bye\r")
-                tn.close()
-
-                line_re = _re.compile(
-                    r"^\s*(\d+)\s+(\d{1,2}-[A-Za-z]{3})\s+(\S+)\s+(\d+)\s+(\S+)\s+(@\S+)\s+(\S+)\s+(.*)$"
-                )
-
-                for line in raw_output.splitlines():
-                    m = line_re.match(line)
-                    if not m:
-                        continue
-
-                    msg_id, date, msg_type, size, category, area, sender, subject = m.groups()
-
-                    messages.append({
-                        "id": msg_id,
-                        "date": date,
-                        "type": msg_type,
-                        "size": size,
-                        "category": category,
-                        "area": area,
-                        "from": sender,
-                        "subject": subject,
-                    })
-
-                LB_CACHE["timestamp"] = time.time()
-                LB_CACHE["messages"] = messages
-                LB_CACHE["raw_output"] = raw_output
-
-                print(f"Bulletin cache refreshed: {len(messages)} messages")
-
-        except Exception as e:
-            print(f"Bulletin cache refresh failed: {e}")
-
-        time.sleep(300)
-
-
-@app.on_event("startup")
-def start_bulletin_cache_worker():
-    t = threading.Thread(target=refresh_bulletin_cache_background, daemon=True)
-    t.start()
-    print("Bulletin cache background worker started")
-
-
-@app.get("/connections")
-def connections(request: Request):
-    user = require_user(request)
-    lines = []
-    circuits = []
-    uplinks = []
-    error = None
-
-    try:
-        tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
-
-        tn.read_until(b"Username:", timeout=10)
-        tn.write((user["bpq_user"] + "\r").encode())
-
-        tn.read_until(b"Password:", timeout=10)
-        tn.write((user["bpq_password"] + "\r").encode())
-
-        time.sleep(1)
-        tn.read_very_eager()
-
-        tn.write(b"users\r")
-        time.sleep(2)
-        output = tn.read_very_eager().decode(errors="ignore")
-
-        tn.write(b"bye\r")
-        tn.close()
-
-        for line in output.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-
-            if line.startswith("TITUS1:"):
-                continue
-
-            if "G8BPQ Network System" in line:
-                continue
-
-            if line.startswith("TNC Uplink"):
-                uplinks.append(line)
-                continue
-
-            if "Circuit(" in line:
-                circuits.append(line)
-                continue
-
-            lines.append(line)
-
-    except Exception as e:
-        error = f"Could not load live connections: {e}"
-
-    return templates.TemplateResponse(
-        "connections.html",
-        {
-            "request": request,
-            "user": user,
-            "uplinks": uplinks,
-            "circuits": circuits,
-            "lines": lines,
-            "error": error,
-        },
-    )
-
-
-@app.get("/node")
-def node_status(request: Request):
-    user = require_user(request)
-    error = None
-    ports = []
-    raw_ports = ""
-    raw_users = ""
-    version_line = ""
-    connection_count = 0
-
-    try:
-        tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
-
-        tn.read_until(b"Username:", timeout=10)
-        tn.write((user["bpq_user"] + "\r").encode())
-
-        tn.read_until(b"Password:", timeout=10)
-        tn.write((user["bpq_password"] + "\r").encode())
-
-        time.sleep(1)
-        tn.read_very_eager()
-
-        tn.write(b"po\r")
-        time.sleep(1)
-        raw_ports = tn.read_very_eager().decode(errors="ignore")
-
-        tn.write(b"users\r")
-        time.sleep(1)
-        raw_users = tn.read_very_eager().decode(errors="ignore")
-
-        tn.write(b"bye\r")
-        tn.close()
-
-        for line in raw_ports.splitlines():
-            clean = line.strip()
-
-            if "G8BPQ Network System" in clean:
-                version_line = clean
-
-            if clean.startswith("TITUS1:"):
-                continue
-
-            if " Port " in clean and clean[0:2].strip().isdigit():
-                parts = clean.split(None, 1)
-                if len(parts) == 2:
-                    ports.append({
-                        "number": parts[0],
-                        "description": parts[1],
-                    })
-
-        for line in raw_users.splitlines():
-            if "Circuit(" in line or line.strip().startswith("TNC Uplink"):
-                connection_count += 1
-
-    except Exception as e:
-        error = f"Could not load node status: {e}"
-
-    bulletin_count = len(LB_CACHE["messages"]) if "LB_CACHE" in globals() else 0
-    bulletin_cache_age = int(time.time() - LB_CACHE["timestamp"]) if "LB_CACHE" in globals() and LB_CACHE["timestamp"] else None
-    latest_bulletin = LB_CACHE["messages"][0]["id"] if "LB_CACHE" in globals() and LB_CACHE["messages"] else "Unknown"
-
-    return templates.TemplateResponse(
-        "node.html",
-        {
-            "request": request,
-            "user": user,
-            "error": error,
-            "ports": ports,
-            "version_line": version_line,
-            "connection_count": connection_count,
-            "bulletin_count": bulletin_count,
-            "bulletin_cache_age": bulletin_cache_age,
-            "latest_bulletin": latest_bulletin,
-            "raw_ports": raw_ports,
-            "raw_users": raw_users,
-        },
-    )
-
-
-@app.get("/nodes")
-def nodes(request: Request, q: str = Query("")):
-    user = require_user(request)
-    error = None
-    raw_output = ""
-    nodes = []
-
-    try:
-        tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=15)
-
-        tn.read_until(b"Username:", timeout=10)
-        tn.write((user["bpq_user"] + "\r").encode())
-
-        tn.read_until(b"Password:", timeout=10)
-        tn.write((user["bpq_password"] + "\r").encode())
-
-        time.sleep(1)
-        tn.read_very_eager()
-
-        tn.write(b"nodes\r")
-        time.sleep(4)
-        raw_output = tn.read_very_eager().decode(errors="ignore")
-
-        tn.write(b"bye\r")
-        tn.close()
-
-        for line in raw_output.splitlines():
-            clean = line.strip()
-
-            if not clean:
-                continue
-
-            if clean.startswith("TITUS1:") or clean == "Nodes":
-                continue
-
-            for token in clean.split():
-                if ":" in token:
-                    alias, callsign = token.split(":", 1)
-                    nodes.append({
-                        "alias": alias.strip(),
-                        "callsign": callsign.strip(),
-                    })
-                elif "-" in token or token.isalnum():
-                    # Handles entries like KC4NWK-2 that have no alias prefix
-                    if token not in ["Nodes"]:
-                        nodes.append({
-                            "alias": "",
-                            "callsign": token.strip(),
-                        })
-
-        q_clean = q.strip().lower()
-        if q_clean:
-            nodes = [
-                n for n in nodes
-                if q_clean in n["alias"].lower()
-                or q_clean in n["callsign"].lower()
-            ]
-
-    except Exception as e:
-        error = f"Could not load nodes: {e}"
-
-    return templates.TemplateResponse(
-        "nodes.html",
-        {
-            "request": request,
-            "user": user,
-            "nodes": nodes,
-            "q": q,
-            "error": error,
-            "raw_output": raw_output,
-            "total_nodes": len(nodes),
         },
     )

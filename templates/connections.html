@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Live Connections</h2>
+<p class="muted">Current BPQ node users and circuits.</p>
+
+<p>
+  <a class="button" href="/connections">Refresh</a>
+</p>
+
+{% if error %}
+  <div class="error">{{ error }}</div>
+{% endif %}
+
+{% if uplinks %}
+<h3>Uplinks</h3>
+<table>
+  <tr>
+    <th>Connection</th>
+  </tr>
+  {% for u in uplinks %}
+  <tr>
+    <td>{{ u }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if circuits %}
+<h3>Circuits</h3>
+<table>
+  <tr>
+    <th>Circuit</th>
+  </tr>
+  {% for c in circuits %}
+  <tr>
+    <td>{{ c }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if lines %}
+<h3>Other Output</h3>
+<pre>{% for l in lines %}{{ l }}
+{% endfor %}</pre>
+{% endif %}
+
+{% if not uplinks and not circuits and not lines and not error %}
+<div class="card">
+  <h3>No active connections</h3>
+  <p class="muted">No connected users or active circuits were returned.</p>
+</div>
+{% endif %}
+
+{% endblock %}

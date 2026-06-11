@@ -10,23 +10,7 @@
     <div class="dash-icon">📥</div>
     <div>
       <h3>Inbox</h3>
-      <p>Read private BPQ messages</p>
-    </div>
-  </a>
-
-  <a class="dash-card" href="/bulletins">
-    <div class="dash-icon">📢</div>
-    <div>
-      <h3>Bulletins</h3>
-      <p>{{ bulletin_count }} cached bulletins</p>
-    </div>
-  </a>
-
-  <a class="dash-card" href="/bulletin/{{ latest_bulletin }}">
-    <div class="dash-icon">🆕</div>
-    <div>
-      <h3>Latest Bulletin</h3>
-      <p>{{ latest_bulletin }}</p>
+      <p>Read BPQ private messages</p>
     </div>
   </a>
 
@@ -50,9 +34,18 @@
     <div class="dash-icon">📡</div>
     <div>
       <h3>Node Status</h3>
-      <p>Online</p>
+      <p>Coming soon</p>
     </div>
   </div>
+
+
+  <a class="dash-card" href="/bulletins">
+    <div class="dash-icon">📢</div>
+    <div>
+      <h3>Bulletins</h3>
+      <p>Browse public BPQ bulletins</p>
+    </div>
+  </a>
 
 </div>
 

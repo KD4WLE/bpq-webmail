@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Bulletins</h2>
+<p class="muted">
+  Showing {{ messages|length }} of {{ total_messages }} bulletins.
+  Page {{ page }} of {{ total_pages }}.
+  {% if cache_age is not none %}
+    Cached {{ cache_age }} seconds ago.
+  {% endif %}
+</p>
+
+<div class="cache-notice">
+  {% if cache_age is none %}
+    Building bulletin cache from BBS. This may take a few seconds...
+  {% else %}
+    Bulletin cache loaded {{ cache_age }} seconds ago.
+  {% endif %}
+</div>
+
+
+<p>
+  <a class="button" href="/bulletins?refresh=1">Refresh Bulletins</a>
+</p>
+
+{% if error %}
+  <div class="error">{{ error }}</div>
+{% endif %}
+
+{% if messages %}
+<table>
+  <tr>
+    <th>Msg #</th>
+    <th>Date</th>
+    <th>Type</th>
+    <th>Size</th>
+    <th>Category</th>
+    <th>Area</th>
+    <th>From</th>
+    <th>Subject</th>
+  </tr>
+  {% for m in messages %}
+  <tr>
+    <td><a href="/bulletin/{{ m.id }}">{{ m.id }}</a></td>
+    <td>{{ m.date }}</td>
+    <td>{{ m.type }}</td>
+    <td>{{ m.size }}</td>
+    <td>{{ m.category }}</td>
+    <td>{{ m.area }}</td>
+    <td>{{ m.from }}</td>
+    <td>{{ m.subject }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<div class="pager">
+  {% if has_prev %}
+    <a class="button" href="/bulletins?page={{ prev_page }}">← Previous</a>
+  {% endif %}
+
+  {% if has_next %}
+    <a class="button" href="/bulletins?page={{ next_page }}">Next →</a>
+  {% endif %}
+</div>
+
+{% else %}
+  <div class="card">
+    <h3>No bulletins parsed</h3>
+    <p class="muted">Raw BBS output is shown below for tuning.</p>
+    <pre>{{ raw_output }}</pre>
+  </div>
+{% endif %}
+
+{% endblock %}

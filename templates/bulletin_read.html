@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+
+<p>
+  <a class="button" href="/bulletins">← Back to Bulletins</a>
+</p>
+
+<h2>Bulletin {{ msg_id }}</h2>
+
+{% if error %}
+  <div class="error">{{ error }}</div>
+{% endif %}
+
+<div class="bulletin-view">
+  <pre>{{ body }}</pre>
+</div>
+
+{% endblock %}

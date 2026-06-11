@@ -23,8 +23,6 @@
         <a href="/">📥 Inbox</a>
         <a href="/bulletins">📢 Bulletins</a>
         <a href="/mheard">📡 MHeard</a>
-        <a href="/node">🖥️ Node Status</a>
-        <a href="/nodes">🌐 Nodes</a>
         <a href="/connections">🔗 Connections</a>
         <a href="/compose">✍️ Compose</a>
         <a href="/admin/users">👥 Admin Users</a>
