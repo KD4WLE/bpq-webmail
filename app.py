@@ -43,6 +43,14 @@ APP_ADMIN_PASSWORD = env("APP_ADMIN_PASSWORD", "change-me-now")
 _CACHE = {}
 
 
+
+def log_elapsed(label, start):
+    try:
+        print(f"PERF {label}: {time.time() - start:.2f}s")
+    except Exception:
+        pass
+
+
 def bpq_command(user, commands, timeout=10, settle=0.5):
     """Run one or more BPQ telnet commands and return combined output."""
     start = time.time()
@@ -69,7 +77,7 @@ def bpq_command(user, commands, timeout=10, settle=0.5):
             output += tn.read_very_eager().decode(errors="ignore")
 
         tn.write(b"bye\r")
-        print(f"BPQ commands {commands} took {time.time() - start:.2f}s")
+        log_elapsed(f"bpq commands {commands}", start)
         return output
     finally:
         try:
@@ -858,13 +866,22 @@ def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refr
         else:
             raw_output = bpq_command(user, "nodes", timeout=15, settle=1.0)
 
+            in_nodes_section = False
+
             for line in raw_output.splitlines():
                 clean = line.strip()
 
                 if not clean:
                     continue
 
-                if clean.startswith("TITUS1:") or clean == "Nodes":
+                if clean == "Nodes" or clean.endswith("} Nodes") or clean.endswith(":Nodes") or clean.lower().endswith(" nodes"):
+                    in_nodes_section = True
+                    continue
+
+                if not in_nodes_section:
+                    continue
+
+                if clean.startswith("TITUS1:"):
                     continue
 
                 for token in clean.split():
