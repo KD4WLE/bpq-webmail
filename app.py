@@ -224,52 +224,73 @@ def compose_form(request: Request, to: str = "", subject: str = ""):
 @app.post("/compose", response_class=HTMLResponse)
 def compose_send(request: Request, to: str = Form(...), subject: str = Form(...), body: str = Form(...)):
     user = require_user(request)
+    output = ""
+
     try:
-        msg = EmailMessage()
-        msg["From"] = user["callsign"]
-        msg["To"] = to
-        msg["Subject"] = subject
-        msg.set_content(body)
-        with smtplib.SMTP(BPQ_SMTP_HOST, BPQ_SMTP_PORT, timeout=10) as smtp:
-            # Many local BPQ SMTP setups do not require AUTH from localhost.
-            smtp.send_message(msg)
-        return RedirectResponse("/inbox", status_code=303)
-    except Exception as exc:
-        return templates.TemplateResponse("compose.html", {"request": request, "user": user, "to": to, "subject": subject, "body": body, "error": f"Could not send via LinBPQ SMTP: {exc}"})
+        tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=15)
 
+        tn.read_until(b"Username:", timeout=10)
+        tn.write((user["bpq_user"] + "\r").encode())
 
-@app.get("/admin/users", response_class=HTMLResponse)
-def admin_users(request: Request):
-    require_admin(request)
-    with db() as conn:
-        users = conn.execute("SELECT * FROM users ORDER BY username").fetchall()
-    return templates.TemplateResponse("admin_users.html", {"request": request, "users": users})
+        tn.read_until(b"Password:", timeout=10)
+        tn.write((user["bpq_password"] + "\r").encode())
 
+        time.sleep(1)
+        output += tn.read_very_eager().decode(errors="ignore")
 
-@app.post("/admin/users/add")
-def admin_add_user(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
-    callsign: str = Form(...),
-    bpq_user: str = Form(...),
-    bpq_password: str = Form(...),
-    approved: Optional[str] = Form(None),
-):
-    require_admin(request)
-    with db() as conn:
-        conn.execute(
-            """
-            INSERT INTO users
-            (username, password_hash, callsign, bpq_user, bpq_password, approved, is_admin)
-            VALUES (?, ?, ?, ?, ?, ?, 0)
-            """,
-            (username, pwd_context.hash(password), callsign.upper(), bpq_user.upper(), bpq_password, 1 if approved else 0),
+        tn.write(b"bbs\r")
+        time.sleep(1)
+        output += tn.read_very_eager().decode(errors="ignore")
+
+        tn.write((f"sp {to.strip()}\r").encode())
+        time.sleep(1)
+        output += tn.read_very_eager().decode(errors="ignore")
+
+        tn.write((subject.strip() + "\r").encode())
+        time.sleep(1)
+        output += tn.read_very_eager().decode(errors="ignore")
+
+        clean_body = body.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+        for line in clean_body.split("\n"):
+            tn.write((line + "\r").encode())
+            time.sleep(0.25)
+
+        time.sleep(1)
+        output += tn.read_very_eager().decode(errors="ignore")
+
+        tn.write(b"/ex\r")
+        time.sleep(5)
+        output += tn.read_very_eager().decode(errors="ignore")
+
+        tn.write(b"bye\r")
+        tn.close()
+
+        return templates.TemplateResponse(
+            "compose.html",
+            {
+                "request": request,
+                "user": user,
+                "to": to,
+                "subject": subject,
+                "body": body,
+                "error": "BBS send response:\n\n" + output,
+            },
         )
-    return RedirectResponse("/admin/users", status_code=303)
 
+    except Exception as exc:
+        return templates.TemplateResponse(
+            "compose.html",
+            {
+                "request": request,
+                "user": user,
+                "to": to,
+                "subject": subject,
+                "body": body,
+                "error": f"Could not send via LinBPQ BBS: {exc}\n\n{output}",
+            },
+        )
 
-@app.post("/admin/users/{user_id}/toggle")
 def admin_toggle_user(request: Request, user_id: int):
     admin = require_admin(request)
     if admin["id"] == user_id:
