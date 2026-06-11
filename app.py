@@ -322,7 +322,7 @@ def dashboard(request: Request):
             "user": user,
             "total_users": total_users,
             "approved_users": approved_users,
-            "portal_version": "v0.45",
+            "portal_version": "v0.46",
             "bulletin_count": len(LB_CACHE["messages"]) if "LB_CACHE" in globals() else 0,
             "latest_bulletin": LB_CACHE["messages"][0]["id"] if "LB_CACHE" in globals() and LB_CACHE["messages"] else "Unknown",
         },
