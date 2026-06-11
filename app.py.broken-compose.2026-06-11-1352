@@ -31,74 +31,11 @@ BPQ_POP3_HOST = env("BPQ_POP3_HOST", "127.0.0.1")
 BPQ_POP3_PORT = int(env("BPQ_POP3_PORT", "110"))
 BPQ_SMTP_HOST = env("BPQ_SMTP_HOST", "127.0.0.1")
 BPQ_SMTP_PORT = int(env("BPQ_SMTP_PORT", "25"))
-PORTAL_TAGLINE = env("PORTAL_TAGLINE", "Sent via the BPQ Web Portal")
 SESSION_SECRET = env("SESSION_SECRET", "dev-change-me")
 APP_ADMIN_USERNAME = env("APP_ADMIN_USERNAME", "admin")
 from dotenv import load_dotenv
 load_dotenv()
 APP_ADMIN_PASSWORD = env("APP_ADMIN_PASSWORD", "change-me-now")
-
-
-# Simple in-process TTL cache for slow BPQ/telnet views
-_CACHE = {}
-
-
-
-def log_elapsed(label, start):
-    try:
-        print(f"PERF {label}: {time.time() - start:.2f}s")
-    except Exception:
-        pass
-
-
-def bpq_command(user, commands, timeout=10, settle=0.5):
-    """Run one or more BPQ telnet commands and return combined output."""
-    start = time.time()
-    output = ""
-    if isinstance(commands, str):
-        commands = [commands]
-
-    tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=timeout)
-    try:
-        time.sleep(settle)
-        output += tn.read_very_eager().decode(errors="ignore")
-
-        tn.write((user["bpq_user"] + "\r").encode())
-        time.sleep(settle)
-        output += tn.read_very_eager().decode(errors="ignore")
-
-        tn.write((user["bpq_password"] + "\r").encode())
-        time.sleep(settle)
-        output += tn.read_very_eager().decode(errors="ignore")
-
-        for cmd in commands:
-            tn.write((cmd + "\r").encode())
-            time.sleep(settle)
-            output += tn.read_very_eager().decode(errors="ignore")
-
-        tn.write(b"bye\r")
-        log_elapsed(f"bpq commands {commands}", start)
-        return output
-    finally:
-        try:
-            tn.close()
-        except Exception:
-            pass
-
-
-def ttl_cache_get(key, ttl_seconds):
-    item = _CACHE.get(key)
-    if not item:
-        return None
-    ts, value = item
-    if time.time() - ts > ttl_seconds:
-        _CACHE.pop(key, None)
-        return None
-    return value
-
-def ttl_cache_set(key, value):
-    _CACHE[key] = (time.time(), value)
-    return value
 
 app = FastAPI(title="BPQ Webmail")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -299,11 +236,11 @@ def compose_send(request: Request, to: str = Form(...), subject: str = Form(...)
         tn.write((user["bpq_password"] + "\r").encode())
 
         time.sleep(1)
-        output += tn.read_very_eager().decode(errors="ignore")
+        tn.read_very_eager()
 
         tn.write(b"bbs\r")
         time.sleep(1)
-        output += tn.read_very_eager().decode(errors="ignore")
+        tn.read_very_eager()
 
         tn.write((f"sp {to.strip()}\r").encode())
         time.sleep(1)
@@ -313,19 +250,14 @@ def compose_send(request: Request, to: str = Form(...), subject: str = Form(...)
         time.sleep(1)
         output += tn.read_very_eager().decode(errors="ignore")
 
-        clean_body = body.replace("\r\n", "\n").replace("\r", "\n").strip()
+        clean_body = body.replace("
+", "
+").replace("", "
+").strip()
 
-        if PORTAL_TAGLINE:
-            clean_body += f"\n\n---\n{PORTAL_TAGLINE}"
+        message_text = clean_body + "/ex"
+        tn.write(message_text.encode())
 
-        for line in clean_body.split("\n"):
-            tn.write((line + "\r").encode())
-            time.sleep(0.25)
-
-        time.sleep(1)
-        output += tn.read_very_eager().decode(errors="ignore")
-
-        tn.write(b"/ex\r")
         time.sleep(5)
         output += tn.read_very_eager().decode(errors="ignore")
 
@@ -357,6 +289,10 @@ def compose_send(request: Request, to: str = Form(...), subject: str = Form(...)
             },
         )
 
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@app.post("/admin/users/{user_id}/toggle")
 def admin_toggle_user(request: Request, user_id: int):
     admin = require_admin(request)
     if admin["id"] == user_id:
@@ -384,7 +320,7 @@ def dashboard(request: Request):
             "user": user,
             "total_users": total_users,
             "approved_users": approved_users,
-            "portal_version": "v0.46",
+            "portal_version": "v0.45",
             "bulletin_count": len(LB_CACHE["messages"]) if "LB_CACHE" in globals() else 0,
             "latest_bulletin": LB_CACHE["messages"][0]["id"] if "LB_CACHE" in globals() and LB_CACHE["messages"] else "Unknown",
         },
@@ -401,10 +337,6 @@ LB_CACHE_SECONDS = 60
 
 @app.get("/bulletins")
 def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query(0), category: str = Query(""), q: str = Query("")):
-    cached = ttl_cache_get("bulletins", 30)
-    if cached is not None:
-        return cached
-
     user = require_user(request)
     messages = []
     error = None
@@ -492,7 +424,7 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
     end_idx = start_idx + per_page
     page_messages = messages[start_idx:end_idx]
 
-    return ttl_cache_set("bulletins", templates.TemplateResponse(
+    return templates.TemplateResponse(
         "bulletins.html",
         {
             "request": request,
@@ -512,7 +444,7 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
             "q": q,
             "categories": categories,
         },
-    ))
+    )
 
 @app.get("/bulletin/{msg_id}")
 def read_bulletin(request: Request, msg_id: int):
@@ -560,11 +492,6 @@ def read_bulletin(request: Request, msg_id: int):
 
 @app.get("/mheard")
 def mheard(request: Request, port: str = Query("all")):
-    cache_key = f"mheard:{port}"
-    cached = ttl_cache_get(cache_key, 30)
-    if cached is not None:
-        return cached
-
     user = require_user(request)
     ports = {
         "1": "AX/IP/UDP",
@@ -615,7 +542,7 @@ def mheard(request: Request, port: str = Query("all")):
     except Exception as e:
         error = f"Could not load MHeard list: {e}"
 
-    return ttl_cache_set(cache_key, templates.TemplateResponse(
+    return templates.TemplateResponse(
         "mheard.html",
         {
             "request": request,
@@ -625,7 +552,7 @@ def mheard(request: Request, port: str = Query("all")):
             "heard": heard,
             "error": error,
         },
-    ))
+    )
 
 
 def refresh_bulletin_cache_background():
@@ -707,10 +634,6 @@ def start_bulletin_cache_worker():
 
 @app.get("/connections")
 def connections(request: Request):
-    cached = ttl_cache_get("connections", 10)
-    if cached is not None:
-        return cached
-
     user = require_user(request)
     lines = []
     circuits = []
@@ -718,7 +641,23 @@ def connections(request: Request):
     error = None
 
     try:
-        output = bpq_command(user, "users", timeout=10, settle=1.0)
+        tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
+
+        tn.read_until(b"Username:", timeout=10)
+        tn.write((user["bpq_user"] + "\r").encode())
+
+        tn.read_until(b"Password:", timeout=10)
+        tn.write((user["bpq_password"] + "\r").encode())
+
+        time.sleep(1)
+        tn.read_very_eager()
+
+        tn.write(b"users\r")
+        time.sleep(2)
+        output = tn.read_very_eager().decode(errors="ignore")
+
+        tn.write(b"bye\r")
+        tn.close()
 
         for line in output.splitlines():
             line = line.strip()
@@ -744,7 +683,7 @@ def connections(request: Request):
     except Exception as e:
         error = f"Could not load live connections: {e}"
 
-    return ttl_cache_set("connections", templates.TemplateResponse(
+    return templates.TemplateResponse(
         "connections.html",
         {
             "request": request,
@@ -754,7 +693,7 @@ def connections(request: Request):
             "lines": lines,
             "error": error,
         },
-    ))
+    )
 
 
 @app.get("/node")
@@ -865,9 +804,23 @@ def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refr
             nodes = NODE_CACHE["nodes"]
             raw_output = NODE_CACHE["raw_output"]
         else:
-            raw_output = bpq_command(user, "nodes", timeout=15, settle=1.0)
+            tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=15)
 
-            in_nodes_section = False
+            tn.read_until(b"Username:", timeout=10)
+            tn.write((user["bpq_user"] + "\r").encode())
+
+            tn.read_until(b"Password:", timeout=10)
+            tn.write((user["bpq_password"] + "\r").encode())
+
+            time.sleep(1)
+            tn.read_very_eager()
+
+            tn.write(b"nodes\r")
+            time.sleep(4)
+            raw_output = tn.read_very_eager().decode(errors="ignore")
+
+            tn.write(b"bye\r")
+            tn.close()
 
             for line in raw_output.splitlines():
                 clean = line.strip()
@@ -875,14 +828,7 @@ def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refr
                 if not clean:
                     continue
 
-                if clean == "Nodes" or clean.endswith("} Nodes") or clean.endswith(":Nodes") or clean.lower().endswith(" nodes"):
-                    in_nodes_section = True
-                    continue
-
-                if not in_nodes_section:
-                    continue
-
-                if clean.startswith("TITUS1:"):
+                if clean.startswith("TITUS1:") or clean == "Nodes":
                     continue
 
                 for token in clean.split():
@@ -924,7 +870,7 @@ def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refr
 
     cache_age = int(time.time() - NODE_CACHE["timestamp"]) if NODE_CACHE["timestamp"] else None
 
-    return ttl_cache_set("nodes", templates.TemplateResponse(
+    return templates.TemplateResponse(
         "nodes.html",
         {
             "request": request,
@@ -943,26 +889,9 @@ def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refr
             "cache_age": cache_age,
             "cache_seconds": NODE_CACHE_SECONDS,
         },
-    ))
-
-
-
-
-@app.get("/admin/users")
-def admin_users(request: Request):
-    user = require_user(request)
-    if not user["is_admin"]:
-        return RedirectResponse("/", status_code=303)
-
-    with db() as conn:
-        users = conn.execute(
-            "select id, username, callsign, bpq_user, approved, is_admin from users order by username"
-        ).fetchall()
-
-    return templates.TemplateResponse(
-        "admin_users.html",
-        {"request": request, "user": user, "users": users},
     )
+
+
 
 @app.get("/admin/users/edit/{user_id}")
 def admin_edit_user_form(request: Request, user_id: int):
@@ -1073,11 +1002,6 @@ def admin_toggle_admin(request: Request, user_id: int):
             "update users set is_admin=? where id=?",
             (0 if user["is_admin"] else 1, user_id),
         )
-
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_to_user ON messages(to_user)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_from_user ON messages(from_user)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)")
         conn.commit()
 
     conn.close()
