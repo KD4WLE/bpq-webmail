@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 .venv/
 bpq_webmail.db
+bpq_webmail.db.*.bak
