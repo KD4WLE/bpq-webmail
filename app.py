@@ -854,10 +854,6 @@ NODE_CACHE_SECONDS = 300
 
 @app.get("/nodes")
 def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refresh: int = Query(0)):
-    cached = ttl_cache_get("nodes", 30)
-    if cached is not None:
-        return cached
-
     user = require_user(request)
     error = None
     raw_output = ""
@@ -876,23 +872,7 @@ def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refr
             nodes = NODE_CACHE["nodes"]
             raw_output = NODE_CACHE["raw_output"]
         else:
-            tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=15)
-
-            tn.read_until(b"Username:", timeout=10)
-            tn.write((user["bpq_user"] + "\r").encode())
-
-            tn.read_until(b"Password:", timeout=10)
-            tn.write((user["bpq_password"] + "\r").encode())
-
-            time.sleep(1)
-            tn.read_very_eager()
-
-            tn.write(b"nodes\r")
-            time.sleep(4)
-            raw_output = tn.read_very_eager().decode(errors="ignore")
-
-            tn.write(b"bye\r")
-            tn.close()
+            raw_output = bpq_command(user, "nodes", timeout=15, settle=1.0)
 
             for line in raw_output.splitlines():
                 clean = line.strip()
