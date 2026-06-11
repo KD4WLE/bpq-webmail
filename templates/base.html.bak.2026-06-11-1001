@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KD4WLE BPQ Portal</title>
+  <link rel="stylesheet" href="/static/css/kd4wle.css">
+</head>
+<body>
+
+<<header class="site-header">
+  <div style="display:flex; align-items:center; gap:15px;">
+    <img src="/static/img/logo.png" alt="KD4WLE" class="site-logo">
+    <div>
+      <h1 class="site-title">KD4WLE BPQ Portal</h1>
+      <div class="site-subtitle">Packet Radio Messaging Portal</div>
+    </div>
+  </div>
+</header>
+
+<nav class="navbar">
+  <a href="/">Inbox</a>
+  <a href="/compose">Compose</a>
+  <a href="/admin/users">Admin</a>
+  <a href="/logout">Logout</a>
+</nav>
+
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

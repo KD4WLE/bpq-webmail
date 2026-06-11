@@ -3,39 +3,47 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BPQ Webmail</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; margin: 0; background: #f6f7f9; color: #1f2937; }
-    header { background: #111827; color: white; padding: 1rem 1.5rem; display:flex; justify-content:space-between; align-items:center; }
-    header a { color: white; margin-left: 1rem; text-decoration: none; }
-    main { max-width: 980px; margin: 2rem auto; padding: 0 1rem; }
-    .card { background: white; border-radius: 12px; padding: 1.25rem; box-shadow: 0 1px 6px rgba(0,0,0,.08); margin-bottom: 1rem; }
-    input, textarea { width: 100%; padding: .7rem; margin: .35rem 0 1rem; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; }
-    button, .button { background: #2563eb; color: white; border: 0; padding: .7rem 1rem; border-radius: 8px; cursor: pointer; text-decoration: none; display: inline-block; }
-    table { width: 100%; border-collapse: collapse; background: white; }
-    th, td { padding: .75rem; border-bottom: 1px solid #e5e7eb; text-align: left; }
-    .error { background: #fee2e2; color: #991b1b; padding: .75rem; border-radius: 8px; margin-bottom: 1rem; }
-    .muted { color: #6b7280; }
-    pre { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  </style>
+  <title>KD4WLE BPQ Portal</title>
+  <link rel="stylesheet" href="/static/css/kd4wle.css">
 </head>
+
 <body>
-<header>
-  <div><strong>BPQ Webmail</strong></div>
-  <nav>
-    <a href="/">Home</a>
-    {% if user %}
-      <a href="/inbox">Inbox</a>
-      <a href="/compose">Compose</a>
-      {% if user.is_admin %}<a href="/admin/users">Admin</a>{% endif %}
-      <a href="/logout">Logout</a>
-    {% else %}
-      <a href="/login">Login</a>
-    {% endif %}
-  </nav>
-</header>
-<main>
-{% block content %}{% endblock %}
-</main>
+  <div class="app-shell">
+
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-center">
+          <img src="/static/img/logo.png" alt="KD4WLE" class="brand-logo">
+          <div class="brand-subtitle">BPQ Portal</div>
+        </div>
+      </div>
+
+      <nav class="side-nav">
+        <a href="/">Inbox</a>
+        <a href="/compose">Compose</a>
+        <a href="/admin/users">Admin Users</a>
+        <a href="/logout">Logout</a>
+      </nav>
+
+      <div class="sidebar-footer">
+        Packet Radio Messaging<br>
+        Amateur Radio Network
+      </div>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <div>
+          <h1>KD4WLE BPQ Portal</h1>
+          <p>Packet Radio Messaging Interface</p>
+        </div>
+      </header>
+
+      <section class="content-card">
+        {% block content %}{% endblock %}
+      </section>
+    </main>
+
+  </div>
 </body>
 </html>
