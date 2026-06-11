@@ -42,6 +42,42 @@ APP_ADMIN_PASSWORD = env("APP_ADMIN_PASSWORD", "change-me-now")
 # Simple in-process TTL cache for slow BPQ/telnet views
 _CACHE = {}
 
+
+def bpq_command(user, commands, timeout=10, settle=0.5):
+    """Run one or more BPQ telnet commands and return combined output."""
+    start = time.time()
+    output = ""
+    if isinstance(commands, str):
+        commands = [commands]
+
+    tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=timeout)
+    try:
+        time.sleep(settle)
+        output += tn.read_very_eager().decode(errors="ignore")
+
+        tn.write((user["bpq_user"] + "\r").encode())
+        time.sleep(settle)
+        output += tn.read_very_eager().decode(errors="ignore")
+
+        tn.write((user["bpq_password"] + "\r").encode())
+        time.sleep(settle)
+        output += tn.read_very_eager().decode(errors="ignore")
+
+        for cmd in commands:
+            tn.write((cmd + "\r").encode())
+            time.sleep(settle)
+            output += tn.read_very_eager().decode(errors="ignore")
+
+        tn.write(b"bye\r")
+        print(f"BPQ commands {commands} took {time.time() - start:.2f}s")
+        return output
+    finally:
+        try:
+            tn.close()
+        except Exception:
+            pass
+
+
 def ttl_cache_get(key, ttl_seconds):
     item = _CACHE.get(key)
     if not item:
