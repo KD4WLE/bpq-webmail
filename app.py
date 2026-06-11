@@ -1021,6 +1021,11 @@ def admin_toggle_admin(request: Request, user_id: int):
             "update users set is_admin=? where id=?",
             (0 if user["is_admin"] else 1, user_id),
         )
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_to_user ON messages(to_user)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_from_user ON messages(from_user)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)")
         conn.commit()
 
     conn.close()
