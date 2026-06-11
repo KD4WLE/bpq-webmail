@@ -510,6 +510,82 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
         },
     ))
 
+
+@app.get("/bulletins/preferences")
+def bulletin_preferences(request: Request):
+    user = require_user(request)
+    messages = LB_CACHE["messages"] if LB_CACHE["messages"] else []
+
+    categories = sorted(set(m["category"] for m in messages))
+    areas = sorted(set(m["area"] for m in messages))
+    senders = sorted(set(m["from"] for m in messages))
+
+    with db() as conn:
+        prefs = conn.execute(
+            "select hidden_categories, hidden_areas, hidden_senders, page_size from bulletin_preferences where user_id=?",
+            (user["id"],),
+        ).fetchone()
+
+    hidden_categories = set()
+    hidden_areas = set()
+    hidden_senders = set()
+    page_size = 25
+
+    if prefs:
+        hidden_categories = {x.strip().upper() for x in (prefs["hidden_categories"] or "").split(",") if x.strip()}
+        hidden_areas = {x.strip().upper() for x in (prefs["hidden_areas"] or "").split(",") if x.strip()}
+        hidden_senders = {x.strip().upper() for x in (prefs["hidden_senders"] or "").split(",") if x.strip()}
+        page_size = prefs["page_size"] or 25
+
+    return templates.TemplateResponse(
+        "bulletin_preferences.html",
+        {
+            "request": request,
+            "user": user,
+            "categories": categories,
+            "areas": areas,
+            "senders": senders,
+            "hidden_categories": hidden_categories,
+            "hidden_areas": hidden_areas,
+            "hidden_senders": hidden_senders,
+            "page_size": page_size,
+        },
+    )
+
+
+@app.post("/bulletins/preferences")
+def save_bulletin_preferences(
+    request: Request,
+    hidden_categories: list[str] = Form(default=[]),
+    hidden_areas: list[str] = Form(default=[]),
+    hidden_senders_text: str = Form(default=""),
+    page_size: int = Form(default=25),
+):
+    user = require_user(request)
+
+    cats = ",".join(sorted({c.strip().upper() for c in hidden_categories if c.strip()}))
+    areas = ",".join(sorted({a.strip().upper() for a in hidden_areas if a.strip()}))
+    senders = ",".join(sorted({s.strip().upper() for s in hidden_senders_text.replace(" ", ",").split(",") if s.strip()}))
+    page_size = max(5, min(page_size, 100))
+
+    with db() as conn:
+        conn.execute(
+            """
+            insert into bulletin_preferences (user_id, hidden_categories, hidden_areas, hidden_senders, page_size)
+            values (?, ?, ?, ?, ?)
+            on conflict(user_id) do update set
+                hidden_categories=excluded.hidden_categories,
+                hidden_areas=excluded.hidden_areas,
+                hidden_senders=excluded.hidden_senders,
+                page_size=excluded.page_size
+            """,
+            (user["id"], cats, areas, senders, page_size),
+        )
+        conn.commit()
+
+    return RedirectResponse("/bulletins", status_code=303)
+
+
 @app.get("/bulletin/{msg_id}")
 def read_bulletin(request: Request, msg_id: int):
     user = require_user(request)
