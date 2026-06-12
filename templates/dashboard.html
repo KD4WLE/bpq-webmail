@@ -21,6 +21,14 @@
     </div>
   </a>
 
+  <a class="dash-card" href="/watchlists">
+    <div class="dash-icon">⭐</div>
+    <div>
+      <h3>Watched Bulletins</h3>
+      <p>{{ watched_unread_count }} unread watched</p>
+    </div>
+  </a>
+
   {% if latest_bulletin %}
   <a class="dash-card" href="/bulletin/{{ latest_bulletin.id }}">
     <div class="dash-icon">🗓️</div>
@@ -105,6 +113,14 @@
     <div>
       <h3>Profile</h3>
       <p>Preferences and password</p>
+    </div>
+  </a>
+
+  <a class="dash-card" href="/watchlists">
+    <div class="dash-icon">⭐</div>
+    <div>
+      <h3>Watch Lists</h3>
+      <p>Track senders, areas, and categories</p>
     </div>
   </a>
 

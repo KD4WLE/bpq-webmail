@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Watch Lists</h2>
+<p class="muted">
+  Track cached bulletins by sender, area, or category.
+  {{ unread_count }} unread watched bulletins.
+</p>
+
+<form method="post" action="/watchlists/add" class="card">
+  <h3>Add Watch</h3>
+
+  <label>Watch Type</label>
+  <select name="watch_type" required>
+    <option value="sender">Sender</option>
+    <option value="area">Area</option>
+    <option value="category">Category</option>
+  </select>
+
+  <label>Value</label>
+  <input type="text" name="watch_value" placeholder="CALLSIGN, @AREA, or CATEGORY" required>
+
+  <button type="submit">Add Watch</button>
+</form>
+
+<h3>Current Watches</h3>
+
+{% if watches %}
+<table>
+  <tr>
+    <th>Type</th>
+    <th>Value</th>
+    <th>Created</th>
+    <th>Actions</th>
+  </tr>
+  {% for w in watches %}
+  <tr>
+    <td>{{ w.watch_type }}</td>
+    <td>{{ w.watch_value }}</td>
+    <td>{{ w.created_at }}</td>
+    <td>
+      <form method="post" action="/watchlists/delete/{{ w.id }}" style="display:inline;" onsubmit="return confirm('Delete this watch?');">
+        <button type="submit">Delete</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+  <div class="card">
+    <h3>No watches yet</h3>
+    <p class="muted">Add a sender, area, or category above.</p>
+  </div>
+{% endif %}
+
+<h3>Watched Bulletins</h3>
+
+<div class="cache-notice">
+  {% if cache_age is none %}
+    No bulletin cache is loaded yet.
+  {% else %}
+    Bulletin cache loaded {{ cache_age }} seconds ago.
+  {% endif %}
+</div>
+
+{% if messages %}
+{% include "_bulletin_table.html" %}
+{% else %}
+  <div class="card">
+    <h3>No watched bulletins found</h3>
+    <p class="muted">Matching cached bulletins will appear here.</p>
+  </div>
+{% endif %}
+
+{% endblock %}

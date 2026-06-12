@@ -28,6 +28,7 @@
         <a href="/connections">🔗 Connections</a>
         <a href="/compose">✍️ Compose</a>
         {% if user %}
+          <a href="/watchlists">⭐ Watch Lists</a>
           <a href="/profile">⚙️ Profile</a>
           {% if user.is_admin %}
             <a href="/admin/users">👥 Admin Users</a>
@@ -41,7 +42,7 @@
 
       <div class="sidebar-footer">
         KD4WLE BPQ Portal<br>
-        <strong>v0.46</strong><br>
+        <strong>{{ app_version }}</strong><br>
         Packet Radio Messaging
       </div>
     </aside>

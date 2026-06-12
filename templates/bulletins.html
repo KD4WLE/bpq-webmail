@@ -53,32 +53,7 @@
 {% endif %}
 
 {% if messages %}
-<table>
-  <tr>
-    <th>Status</th>
-    <th>Msg #</th>
-    <th>Date</th>
-    <th>Type</th>
-    <th>Size</th>
-    <th>Category</th>
-    <th>Area</th>
-    <th>From</th>
-    <th>Subject</th>
-  </tr>
-  {% for m in messages %}
-  <tr>
-    <td>{% if m.is_read %}<span class="muted">Read</span>{% else %}<strong>New</strong>{% endif %}</td>
-    <td><a href="/bulletin/{{ m.id }}">{{ m.id }}</a></td>
-    <td>{{ m.date }}</td>
-    <td>{{ m.type }}</td>
-    <td>{{ m.size }}</td>
-    <td>{{ m.category }}</td>
-    <td>{{ m.area }}</td>
-    <td>{{ m.from }}</td>
-    <td>{{ m.subject }}</td>
-  </tr>
-  {% endfor %}
-</table>
+{% include "_bulletin_table.html" %}
 
 <div class="pager">
   {% if has_prev %}

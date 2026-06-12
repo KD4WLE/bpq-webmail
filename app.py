@@ -38,6 +38,7 @@ APP_ADMIN_USERNAME = env("APP_ADMIN_USERNAME", "admin")
 from dotenv import load_dotenv
 load_dotenv()
 APP_ADMIN_PASSWORD = env("APP_ADMIN_PASSWORD", "change-me-now")
+APP_VERSION = "v0.50"
 
 
 # Simple in-process TTL cache for slow BPQ/telnet views
@@ -104,6 +105,7 @@ def ttl_cache_set(key, value):
 app = FastAPI(title="BPQ Webmail")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+templates.env.globals["app_version"] = APP_VERSION
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 signer = URLSafeSerializer(SESSION_SECRET, salt="bpq-webmail-session")
 
@@ -161,6 +163,18 @@ def init_db() -> None:
                 message_id TEXT NOT NULL,
                 read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (user_id, message_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS watch_lists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                watch_type TEXT NOT NULL CHECK (watch_type IN ('sender', 'area', 'category')),
+                watch_value TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, watch_type, watch_value)
             )
             """
         )
@@ -457,9 +471,10 @@ def dashboard(request: Request):
     user = require_user(request)
 
     bulletins = LB_CACHE["messages"] if "LB_CACHE" in globals() else []
-    bulletin_ids = [str(m["id"]) for m in bulletins]
-    read_ids = get_read_message_ids(user["id"], bulletin_ids)
-    unread_count = sum(1 for msg_id in bulletin_ids if msg_id not in read_ids)
+    unread_count = unread_count_for_messages(user["id"], bulletins)
+    watches = get_watch_lists(user["id"])
+    watched_bulletins = filter_watched_bulletins(bulletins, watches)
+    watched_unread_count = unread_count_for_messages(user["id"], watched_bulletins)
     latest_bulletin = bulletins[0] if bulletins else None
 
     node_count = len(NODE_CACHE["nodes"]) if "NODE_CACHE" in globals() and NODE_CACHE["nodes"] else None
@@ -478,6 +493,7 @@ def dashboard(request: Request):
             "approved_users": approved_users,
             "bulletin_count": len(bulletins),
             "unread_count": unread_count,
+            "watched_unread_count": watched_unread_count,
             "latest_bulletin": latest_bulletin,
             "node_count": node_count,
             "mheard_count": mheard_count,
@@ -663,6 +679,49 @@ def mark_messages_read(user_id: int, message_ids: list[str]) -> None:
             [(user_id, message_id) for message_id in clean_ids],
         )
         conn.commit()
+
+
+WATCH_FIELDS = {
+    "sender": "from",
+    "area": "area",
+    "category": "category",
+}
+
+
+def normalize_watch_value(value: str) -> str:
+    return value.strip().upper()
+
+
+def get_watch_lists(user_id: int) -> list[sqlite3.Row]:
+    with db() as conn:
+        return conn.execute(
+            """
+            select id, watch_type, watch_value, created_at
+            from watch_lists
+            where user_id=?
+            order by watch_type, watch_value
+            """,
+            (user_id,),
+        ).fetchall()
+
+
+def bulletin_matches_watch(message: dict, watch) -> bool:
+    field = WATCH_FIELDS.get(watch["watch_type"])
+    if not field:
+        return False
+    return str(message.get(field, "")).strip().upper() == watch["watch_value"].strip().upper()
+
+
+def filter_watched_bulletins(messages: list[dict], watches) -> list[dict]:
+    if not watches:
+        return []
+    return [m for m in messages if any(bulletin_matches_watch(m, watch) for watch in watches)]
+
+
+def unread_count_for_messages(user_id: int, messages: list[dict]) -> int:
+    message_ids = [str(m["id"]) for m in messages]
+    read_ids = get_read_message_ids(user_id, message_ids)
+    return sum(1 for msg_id in message_ids if msg_id not in read_ids)
 
 
 def apply_bulletin_preferences(messages: list[dict], prefs) -> tuple[list[dict], int]:
@@ -852,6 +911,73 @@ def mark_visible_bulletins_read(
         params["q"] = q.strip()
 
     return RedirectResponse("/bulletins?" + urlencode(params), status_code=303)
+
+
+@app.get("/watchlists")
+def watchlists(request: Request):
+    user = require_user(request)
+    watches = get_watch_lists(user["id"])
+    messages = LB_CACHE["messages"] if "LB_CACHE" in globals() else []
+    prefs = get_bulletin_preferences(user["id"])
+    messages, _ = apply_bulletin_preferences(messages, prefs)
+    watched_messages = [dict(m) for m in filter_watched_bulletins(messages, watches)]
+    message_ids = [str(m["id"]) for m in watched_messages]
+    read_ids = get_read_message_ids(user["id"], message_ids)
+    unread_count = sum(1 for msg_id in message_ids if msg_id not in read_ids)
+
+    for m in watched_messages:
+        m["is_read"] = str(m["id"]) in read_ids
+
+    return templates.TemplateResponse(
+        "watchlists.html",
+        {
+            "request": request,
+            "user": user,
+            "watches": watches,
+            "messages": watched_messages,
+            "unread_count": unread_count,
+            "cache_age": int(time.time() - LB_CACHE["timestamp"]) if "LB_CACHE" in globals() and LB_CACHE["timestamp"] else None,
+            "error": None,
+        },
+    )
+
+
+@app.post("/watchlists/add")
+def add_watchlist(
+    request: Request,
+    watch_type: str = Form(...),
+    watch_value: str = Form(...),
+):
+    user = require_user(request)
+    watch_type = watch_type.strip().lower()
+    watch_value = normalize_watch_value(watch_value)
+
+    if watch_type in WATCH_FIELDS and watch_value:
+        with db() as conn:
+            conn.execute(
+                """
+                insert or ignore into watch_lists (user_id, watch_type, watch_value)
+                values (?, ?, ?)
+                """,
+                (user["id"], watch_type, watch_value),
+            )
+            conn.commit()
+
+    return RedirectResponse("/watchlists", status_code=303)
+
+
+@app.post("/watchlists/delete/{watch_id}")
+def delete_watchlist(request: Request, watch_id: int):
+    user = require_user(request)
+
+    with db() as conn:
+        conn.execute(
+            "delete from watch_lists where id=? and user_id=?",
+            (watch_id, user["id"]),
+        )
+        conn.commit()
+
+    return RedirectResponse("/watchlists", status_code=303)
 
 
 @app.get("/bulletins/preferences")
