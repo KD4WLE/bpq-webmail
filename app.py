@@ -399,20 +399,87 @@ LB_CACHE = {
 
 LB_CACHE_SECONDS = 60
 
-@app.get("/bulletins")
-def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query(0), category: str = Query(""), q: str = Query("")):
-    user = require_user(request)
-    messages = []
-    error = None
-    raw_output = ""
+BULLETIN_DATE_RE = _re.compile(r"^\d{1,2}-[A-Za-z]{3}$")
+BULLETIN_CALL_RE = _re.compile(r"^[A-Za-z]{1,3}\d[A-Za-z0-9/.-]*$")
 
-    if refresh != 1 and LB_CACHE["messages"] and time.time() - LB_CACHE["timestamp"] < LB_CACHE_SECONDS:
-        messages = LB_CACHE["messages"]
-        raw_output = LB_CACHE["raw_output"]
+
+def parse_bulletin_line(line: str) -> Optional[dict]:
+    parts = line.strip().split(None, 7)
+    if len(parts) < 6:
+        return None
+
+    msg_id, date, msg_type, size, category = parts[:5]
+    if not msg_id.isdigit() or not BULLETIN_DATE_RE.match(date) or not size.isdigit():
+        return None
+
+    has_area = len(parts) >= 8 and (parts[5].startswith("@") or BULLETIN_CALL_RE.match(parts[6]))
+
+    if has_area:
+        area = parts[5]
+        sender = parts[6]
+        subject = parts[7]
     else:
-        try:
-            tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
+        area = ""
+        sender = parts[5]
+        subject = " ".join(parts[6:]) if len(parts) > 6 else ""
 
+    return {
+        "id": msg_id,
+        "date": date,
+        "type": msg_type,
+        "size": size,
+        "category": category,
+        "area": area,
+        "from": sender,
+        "subject": subject,
+    }
+
+
+def fetch_bulletin_list(user) -> tuple[list[dict], str, list[str]]:
+    tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
+    try:
+        tn.read_until(b"Username:", timeout=10)
+        tn.write((user["bpq_user"] + "\r").encode())
+
+        tn.read_until(b"Password:", timeout=10)
+        tn.write((user["bpq_password"] + "\r").encode())
+
+        time.sleep(1)
+        tn.read_very_eager()
+
+        tn.write(b"bbs\r")
+        time.sleep(1)
+        tn.read_very_eager()
+
+        tn.write(b"lb\r")
+        time.sleep(4)
+        raw_output = tn.read_very_eager().decode(errors="ignore")
+
+        tn.write(b"bye\r")
+    finally:
+        try:
+            tn.close()
+        except Exception:
+            pass
+
+    messages = []
+    unmatched = []
+    for line in raw_output.splitlines():
+        parsed = parse_bulletin_line(line)
+        if parsed:
+            messages.append(parsed)
+        elif line.strip() and line.lstrip()[:1].isdigit():
+            unmatched.append(line)
+
+    return messages, raw_output, unmatched
+
+
+def read_bulletin_body(user, msg_id: int) -> str:
+    responses = []
+
+    for command in (f"r {msg_id}", f"read {msg_id}"):
+        tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
+        try:
             tn.read_until(b"Username:", timeout=10)
             tn.write((user["bpq_user"] + "\r").encode())
 
@@ -426,48 +493,26 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
             time.sleep(1)
             tn.read_very_eager()
 
-            tn.write(b"lb\r")
+            tn.write((command + "\r").encode())
             time.sleep(4)
-            raw_output = tn.read_very_eager().decode(errors="ignore")
+            response = tn.read_very_eager().decode(errors="ignore")
+            responses.append(f"$ {command}\n{response}".strip())
 
             tn.write(b"bye\r")
-            tn.close()
+        finally:
+            try:
+                tn.close()
+            except Exception:
+                pass
 
-            line_re = _re.compile(
-                r"^\s*(\d+)\s+(\d{1,2}-[A-Za-z]{3})\s+(\S+)\s+(\d+)\s+(\S+)\s+(@\S+)\s+(\S+)\s+(.*)$"
-            )
+        response_text = response.strip()
+        if response_text and "not found" not in response_text.lower() and "unknown command" not in response_text.lower():
+            return response
 
-            for line in raw_output.splitlines():
-                m = line_re.match(line)
-                if not m:
-                    continue
+    return "\n\n".join(responses)
 
-                msg_id, date, msg_type, size, category, area, sender, subject = m.groups()
 
-                messages.append({
-                    "id": msg_id,
-                    "date": date,
-                    "type": msg_type,
-                    "size": size,
-                    "category": category,
-                    "area": area,
-                    "from": sender,
-                    "subject": subject,
-                })
-
-            LB_CACHE["timestamp"] = time.time()
-            LB_CACHE["messages"] = messages
-            LB_CACHE["raw_output"] = raw_output
-
-        except Exception as e:
-            error = f"Could not load bulletins from BBS: {e}"
-
-    with db() as conn:
-        prefs = conn.execute(
-            "select hidden_categories, hidden_areas, hidden_senders, page_size from bulletin_preferences where user_id=?",
-            (user["id"],),
-        ).fetchone()
-
+def apply_bulletin_preferences(messages: list[dict], prefs) -> tuple[list[dict], int]:
     hidden_categories = set()
     hidden_areas = set()
     hidden_senders = set()
@@ -488,11 +533,47 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
     if hidden_senders:
         messages = [m for m in messages if m["from"].strip().upper() not in hidden_senders]
 
+    return messages, per_page
+
+@app.get("/bulletins")
+def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query(0), category: str = Query(""), q: str = Query("")):
+    user = require_user(request)
+    messages = []
+    error = None
+    raw_output = ""
+    unmatched_lines = []
+
+    if refresh != 1 and LB_CACHE["messages"] and time.time() - LB_CACHE["timestamp"] < LB_CACHE_SECONDS:
+        messages = LB_CACHE["messages"]
+        raw_output = LB_CACHE["raw_output"]
+        unmatched_lines = LB_CACHE.get("unmatched_lines", [])
+    else:
+        try:
+            messages, raw_output, unmatched_lines = fetch_bulletin_list(user)
+            LB_CACHE["timestamp"] = time.time()
+            LB_CACHE["messages"] = messages
+            LB_CACHE["raw_output"] = raw_output
+            LB_CACHE["unmatched_lines"] = unmatched_lines
+
+        except Exception as e:
+            error = f"Could not load bulletins from BBS: {e}"
+
+    with db() as conn:
+        prefs = conn.execute(
+            "select hidden_categories, hidden_areas, hidden_senders, page_size from bulletin_preferences where user_id=?",
+            (user["id"],),
+        ).fetchone()
+
+    messages, per_page = apply_bulletin_preferences(messages, prefs)
+
     category = category.strip().upper()
     q = q.strip()
+    categories = sorted(set(m["category"] for m in messages if m["category"]))
+    areas = sorted(set(m["area"] for m in messages if m["area"]))
+    senders = sorted(set(m["from"] for m in messages if m["from"]))
 
     if category:
-        messages = [m for m in messages if m["category"].upper() == category]
+        messages = [m for m in messages if m["category"].strip().upper() == category]
 
     if q:
         q_lower = q.lower()
@@ -503,8 +584,6 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
             or q_lower in m["category"].lower()
             or q_lower in m["area"].lower()
         ]
-
-    categories = sorted(set(m["category"] for m in messages))
 
     total_messages = len(messages)
     total_pages = max(1, (total_messages + per_page - 1) // per_page)
@@ -532,6 +611,9 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
             "category": category,
             "q": q,
             "categories": categories,
+            "areas": areas,
+            "senders": senders,
+            "unmatched_lines": unmatched_lines,
         },
     ))
 
@@ -618,27 +700,7 @@ def read_bulletin(request: Request, msg_id: int):
     body = ""
 
     try:
-        tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
-
-        tn.read_until(b"Username:", timeout=10)
-        tn.write((user["bpq_user"] + "\r").encode())
-
-        tn.read_until(b"Password:", timeout=10)
-        tn.write((user["bpq_password"] + "\r").encode())
-
-        time.sleep(1)
-        tn.read_very_eager()
-
-        tn.write(b"bbs\r")
-        time.sleep(1)
-        tn.read_very_eager()
-
-        tn.write((f"r {msg_id}\r").encode())
-        time.sleep(4)
-        body = tn.read_very_eager().decode(errors="ignore")
-
-        tn.write(b"bye\r")
-        tn.close()
+        body = read_bulletin_body(user, msg_id)
 
     except Exception as e:
         error = f"Could not read bulletin {msg_id}: {e}"
@@ -736,58 +798,13 @@ def refresh_bulletin_cache_background():
             conn.close()
 
             if user:
-                messages = []
-                raw_output = ""
-
-                tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
-
-                tn.read_until(b"Username:", timeout=10)
-                tn.write((user["bpq_user"] + "\r").encode())
-
-                tn.read_until(b"Password:", timeout=10)
-                tn.write((user["bpq_password"] + "\r").encode())
-
-                time.sleep(1)
-                tn.read_very_eager()
-
-                tn.write(b"bbs\r")
-                time.sleep(1)
-                tn.read_very_eager()
-
-                tn.write(b"lb\r")
-                time.sleep(4)
-                raw_output = tn.read_very_eager().decode(errors="ignore")
-
-                tn.write(b"bye\r")
-                tn.close()
-
-                line_re = _re.compile(
-                    r"^\s*(\d+)\s+(\d{1,2}-[A-Za-z]{3})\s+(\S+)\s+(\d+)\s+(\S+)\s+(@\S+)\s+(\S+)\s+(.*)$"
-                )
-
-                for line in raw_output.splitlines():
-                    m = line_re.match(line)
-                    if not m:
-                        continue
-
-                    msg_id, date, msg_type, size, category, area, sender, subject = m.groups()
-
-                    messages.append({
-                        "id": msg_id,
-                        "date": date,
-                        "type": msg_type,
-                        "size": size,
-                        "category": category,
-                        "area": area,
-                        "from": sender,
-                        "subject": subject,
-                    })
-
+                messages, raw_output, unmatched_lines = fetch_bulletin_list(user)
                 LB_CACHE["timestamp"] = time.time()
                 LB_CACHE["messages"] = messages
                 LB_CACHE["raw_output"] = raw_output
+                LB_CACHE["unmatched_lines"] = unmatched_lines
 
-                print(f"Bulletin cache refreshed: {len(messages)} messages")
+                print(f"Bulletin cache refreshed: {len(messages)} messages, {len(unmatched_lines)} unmatched lines")
 
         except Exception as e:
             print(f"Bulletin cache refresh failed: {e}")

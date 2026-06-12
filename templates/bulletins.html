@@ -27,8 +27,8 @@
   </select>
 
   <button type="submit">Apply</button>
+  <button type="submit" name="refresh" value="1">Refresh</button>
   <a class="button" href="/bulletins">Clear</a>
-  <a class="button" href="/bulletins?refresh=1">Refresh</a>
   <a class="button" href="/bulletins/preferences">Filters</a>
 </form>
 
@@ -64,11 +64,11 @@
 
 <div class="pager">
   {% if has_prev %}
-    <a class="button" href="/bulletins?page={{ prev_page }}{% if category %}&category={{ category }}{% endif %}{% if q %}&q={{ q }}{% endif %}">← Previous</a>
+    <a class="button" href="/bulletins?page={{ prev_page }}{% if category %}&category={{ category|urlencode }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">← Previous</a>
   {% endif %}
 
   {% if has_next %}
-    <a class="button" href="/bulletins?page={{ next_page }}{% if category %}&category={{ category }}{% endif %}{% if q %}&q={{ q }}{% endif %}">Next →</a>
+    <a class="button" href="/bulletins?page={{ next_page }}{% if category %}&category={{ category|urlencode }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">Next →</a>
   {% endif %}
 </div>
 
