@@ -14,6 +14,7 @@ from email.policy import default
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Request, Form, Query, HTTPException
 from fastapi.responses import RedirectResponse, HTMLResponse
@@ -150,6 +151,16 @@ def init_db() -> None:
                 hidden_areas TEXT NOT NULL DEFAULT '',
                 hidden_senders TEXT NOT NULL DEFAULT '',
                 page_size INTEGER NOT NULL DEFAULT 25
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_message_reads (
+                user_id INTEGER NOT NULL,
+                message_id TEXT NOT NULL,
+                read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, message_id)
             )
             """
         )
@@ -601,6 +612,41 @@ def bulletin_matches_query(message: dict, query: str, body_cache: dict) -> bool:
     return bool(cached_body and q in cached_body.lower())
 
 
+def get_read_message_ids(user_id: int, message_ids: list[str]) -> set[str]:
+    if not message_ids:
+        return set()
+
+    placeholders = ",".join("?" for _ in message_ids)
+    with db() as conn:
+        rows = conn.execute(
+            f"""
+            select message_id
+            from user_message_reads
+            where user_id=? and message_id in ({placeholders})
+            """,
+            [user_id, *message_ids],
+        ).fetchall()
+
+    return {row["message_id"] for row in rows}
+
+
+def mark_messages_read(user_id: int, message_ids: list[str]) -> None:
+    clean_ids = sorted({str(message_id).strip() for message_id in message_ids if str(message_id).strip()})
+    if not clean_ids:
+        return
+
+    with db() as conn:
+        conn.executemany(
+            """
+            insert into user_message_reads (user_id, message_id, read_at)
+            values (?, ?, CURRENT_TIMESTAMP)
+            on conflict(user_id, message_id) do update set read_at=CURRENT_TIMESTAMP
+            """,
+            [(user_id, message_id) for message_id in clean_ids],
+        )
+        conn.commit()
+
+
 def apply_bulletin_preferences(messages: list[dict], prefs) -> tuple[list[dict], int]:
     hidden_categories = set()
     hidden_areas = set()
@@ -730,12 +776,18 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
             if bulletin_matches_query(m, q, body_cache)
         ]
 
+    message_ids = [str(m["id"]) for m in messages]
+    read_ids = get_read_message_ids(user["id"], message_ids)
+    unread_count = sum(1 for message_id in message_ids if message_id not in read_ids)
+
     total_messages = len(messages)
     total_pages = max(1, (total_messages + per_page - 1) // per_page)
     page = max(1, min(page, total_pages))
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
-    page_messages = messages[start_idx:end_idx]
+    page_messages = [dict(m) for m in messages[start_idx:end_idx]]
+    for m in page_messages:
+        m["is_read"] = str(m["id"]) in read_ids
 
     return ttl_cache_set("bulletins", templates.TemplateResponse(
         "bulletins.html",
@@ -748,6 +800,7 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
             "page": page,
             "total_pages": total_pages,
             "total_messages": total_messages,
+            "unread_count": unread_count,
             "has_prev": page > 1,
             "has_next": page < total_pages,
             "prev_page": page - 1,
@@ -761,6 +814,26 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
             "unmatched_lines": unmatched_lines,
         },
     ))
+
+
+@app.post("/bulletins/mark-visible-read")
+def mark_visible_bulletins_read(
+    request: Request,
+    message_ids: list[str] = Form(default=[]),
+    page: int = Form(default=1),
+    category: str = Form(default=""),
+    q: str = Form(default=""),
+):
+    user = require_user(request)
+    mark_messages_read(user["id"], message_ids)
+
+    params = {"page": page}
+    if category.strip():
+        params["category"] = category.strip()
+    if q.strip():
+        params["q"] = q.strip()
+
+    return RedirectResponse("/bulletins?" + urlencode(params), status_code=303)
 
 
 @app.get("/bulletins/preferences")
@@ -898,6 +971,7 @@ def read_bulletin(request: Request, msg_id: int):
         body = read_bulletin_body(user, msg_id)
         if body:
             LB_CACHE.setdefault("body_cache", {})[str(msg_id)] = body
+        mark_messages_read(user["id"], [str(msg_id)])
 
     except Exception as e:
         error = f"Could not read bulletin {msg_id}: {e}"

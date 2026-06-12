@@ -6,6 +6,7 @@
 <p class="muted">
   Showing {{ messages|length }} of {{ total_messages }} bulletins.
   Page {{ page }} of {{ total_pages }}.
+  {{ unread_count }} unread.
 </p>
 
 <div class="cache-notice">
@@ -35,6 +36,18 @@
   <a class="button" href="/bulletins/preferences">Filters</a>
 </form>
 
+{% if messages %}
+<form method="post" action="/bulletins/mark-visible-read">
+  <input type="hidden" name="page" value="{{ page }}">
+  <input type="hidden" name="category" value="{{ category }}">
+  <input type="hidden" name="q" value="{{ q }}">
+  {% for m in messages %}
+    <input type="hidden" name="message_ids" value="{{ m.id }}">
+  {% endfor %}
+  <button type="submit">Mark all visible as read</button>
+</form>
+{% endif %}
+
 {% if error %}
   <div class="error">{{ error }}</div>
 {% endif %}
@@ -42,6 +55,7 @@
 {% if messages %}
 <table>
   <tr>
+    <th>Status</th>
     <th>Msg #</th>
     <th>Date</th>
     <th>Type</th>
@@ -53,6 +67,7 @@
   </tr>
   {% for m in messages %}
   <tr>
+    <td>{% if m.is_read %}<span class="muted">Read</span>{% else %}<strong>New</strong>{% endif %}</td>
     <td><a href="/bulletin/{{ m.id }}">{{ m.id }}</a></td>
     <td>{{ m.date }}</td>
     <td>{{ m.type }}</td>
