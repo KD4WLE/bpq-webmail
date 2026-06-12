@@ -27,8 +27,16 @@
         <a href="/nodes">🌐 Nodes</a>
         <a href="/connections">🔗 Connections</a>
         <a href="/compose">✍️ Compose</a>
-        <a href="/admin/users">👥 Admin Users</a>
-        <a href="/logout">🚪 Logout</a>
+        {% if user %}
+          <a href="/profile">⚙️ Profile</a>
+          {% if user.is_admin %}
+            <a href="/admin/users">👥 Admin Users</a>
+            <a href="/admin/password-resets">🔐 Password Resets</a>
+          {% endif %}
+          <a href="/logout">🚪 Logout</a>
+        {% else %}
+          <a href="/login">🔐 Login</a>
+        {% endif %}
       </nav>
 
       <div class="sidebar-footer">

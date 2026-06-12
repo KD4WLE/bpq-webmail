@@ -129,6 +129,30 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS password_reset_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                callsign TEXT NOT NULL,
+                message TEXT NOT NULL DEFAULT '',
+                handled INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                handled_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS bulletin_preferences (
+                user_id INTEGER PRIMARY KEY,
+                hidden_categories TEXT NOT NULL DEFAULT '',
+                hidden_areas TEXT NOT NULL DEFAULT '',
+                hidden_senders TEXT NOT NULL DEFAULT '',
+                page_size INTEGER NOT NULL DEFAULT 25
+            )
+            """
+        )
         row = conn.execute("SELECT id FROM users WHERE username = ?", (APP_ADMIN_USERNAME,)).fetchone()
         if row is None:
             conn.execute(
@@ -233,6 +257,55 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
     resp = RedirectResponse("/inbox", status_code=303)
     resp.set_cookie("bpq_session", signer.dumps({"user_id": user["id"]}), httponly=True, samesite="lax")
     return resp
+
+
+@app.get("/forgot-password", response_class=HTMLResponse)
+def forgot_password_form(request: Request):
+    return templates.TemplateResponse(
+        "forgot_password.html",
+        {"request": request, "error": None, "message": None},
+    )
+
+
+@app.post("/forgot-password", response_class=HTMLResponse)
+def forgot_password_request(
+    request: Request,
+    username: str = Form(...),
+    callsign: str = Form(...),
+    message: str = Form(""),
+):
+    username = username.strip()
+    callsign = callsign.strip().upper()
+    message = message.strip()
+
+    if not username or not callsign:
+        return templates.TemplateResponse(
+            "forgot_password.html",
+            {
+                "request": request,
+                "error": "Username and callsign are required.",
+                "message": None,
+            },
+        )
+
+    with db() as conn:
+        conn.execute(
+            """
+            insert into password_reset_requests (username, callsign, message)
+            values (?, ?, ?)
+            """,
+            (username, callsign, message),
+        )
+        conn.commit()
+
+    return templates.TemplateResponse(
+        "forgot_password.html",
+        {
+            "request": request,
+            "error": None,
+            "message": "Password reset request received. A sysop will review it.",
+        },
+    )
 
 
 @app.get("/logout")
@@ -535,6 +608,65 @@ def apply_bulletin_preferences(messages: list[dict], prefs) -> tuple[list[dict],
 
     return messages, per_page
 
+
+def get_bulletin_preferences(user_id: int):
+    with db() as conn:
+        return conn.execute(
+            "select hidden_categories, hidden_areas, hidden_senders, page_size from bulletin_preferences where user_id=?",
+            (user_id,),
+        ).fetchone()
+
+
+def parse_bulletin_preferences(prefs) -> tuple[set[str], set[str], set[str], int]:
+    hidden_categories = set()
+    hidden_areas = set()
+    hidden_senders = set()
+    page_size = 25
+
+    if prefs:
+        hidden_categories = {x.strip().upper() for x in (prefs["hidden_categories"] or "").split(",") if x.strip()}
+        hidden_areas = {x.strip().upper() for x in (prefs["hidden_areas"] or "").split(",") if x.strip()}
+        hidden_senders = {x.strip().upper() for x in (prefs["hidden_senders"] or "").split(",") if x.strip()}
+        page_size = prefs["page_size"] or 25
+
+    return hidden_categories, hidden_areas, hidden_senders, page_size
+
+
+def save_bulletin_preferences_for_user(
+    user_id: int,
+    hidden_categories: list[str],
+    hidden_areas: list[str],
+    hidden_senders_text: str,
+    page_size: int,
+) -> None:
+    cats = ",".join(sorted({c.strip().upper() for c in hidden_categories if c.strip()}))
+    areas = ",".join(sorted({a.strip().upper() for a in hidden_areas if a.strip()}))
+    senders = ",".join(sorted({s.strip().upper() for s in hidden_senders_text.replace(" ", ",").split(",") if s.strip()}))
+    page_size = max(5, min(page_size, 100))
+
+    with db() as conn:
+        conn.execute(
+            """
+            insert into bulletin_preferences (user_id, hidden_categories, hidden_areas, hidden_senders, page_size)
+            values (?, ?, ?, ?, ?)
+            on conflict(user_id) do update set
+                hidden_categories=excluded.hidden_categories,
+                hidden_areas=excluded.hidden_areas,
+                hidden_senders=excluded.hidden_senders,
+                page_size=excluded.page_size
+            """,
+            (user_id, cats, areas, senders, page_size),
+        )
+        conn.commit()
+
+
+def bulletin_preference_options() -> tuple[list[str], list[str], list[str]]:
+    messages = LB_CACHE["messages"] if LB_CACHE["messages"] else []
+    categories = sorted(set(m["category"] for m in messages if m["category"]))
+    areas = sorted(set(m["area"] for m in messages if m["area"]))
+    senders = sorted(set(m["from"] for m in messages if m["from"]))
+    return categories, areas, senders
+
 @app.get("/bulletins")
 def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query(0), category: str = Query(""), q: str = Query("")):
     user = require_user(request)
@@ -621,28 +753,9 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
 @app.get("/bulletins/preferences")
 def bulletin_preferences(request: Request):
     user = require_user(request)
-    messages = LB_CACHE["messages"] if LB_CACHE["messages"] else []
-
-    categories = sorted(set(m["category"] for m in messages))
-    areas = sorted(set(m["area"] for m in messages))
-    senders = sorted(set(m["from"] for m in messages))
-
-    with db() as conn:
-        prefs = conn.execute(
-            "select hidden_categories, hidden_areas, hidden_senders, page_size from bulletin_preferences where user_id=?",
-            (user["id"],),
-        ).fetchone()
-
-    hidden_categories = set()
-    hidden_areas = set()
-    hidden_senders = set()
-    page_size = 25
-
-    if prefs:
-        hidden_categories = {x.strip().upper() for x in (prefs["hidden_categories"] or "").split(",") if x.strip()}
-        hidden_areas = {x.strip().upper() for x in (prefs["hidden_areas"] or "").split(",") if x.strip()}
-        hidden_senders = {x.strip().upper() for x in (prefs["hidden_senders"] or "").split(",") if x.strip()}
-        page_size = prefs["page_size"] or 25
+    categories, areas, senders = bulletin_preference_options()
+    prefs = get_bulletin_preferences(user["id"])
+    hidden_categories, hidden_areas, hidden_senders, page_size = parse_bulletin_preferences(prefs)
 
     return templates.TemplateResponse(
         "bulletin_preferences.html",
@@ -669,28 +782,97 @@ def save_bulletin_preferences(
     page_size: int = Form(default=25),
 ):
     user = require_user(request)
-
-    cats = ",".join(sorted({c.strip().upper() for c in hidden_categories if c.strip()}))
-    areas = ",".join(sorted({a.strip().upper() for a in hidden_areas if a.strip()}))
-    senders = ",".join(sorted({s.strip().upper() for s in hidden_senders_text.replace(" ", ",").split(",") if s.strip()}))
-    page_size = max(5, min(page_size, 100))
-
-    with db() as conn:
-        conn.execute(
-            """
-            insert into bulletin_preferences (user_id, hidden_categories, hidden_areas, hidden_senders, page_size)
-            values (?, ?, ?, ?, ?)
-            on conflict(user_id) do update set
-                hidden_categories=excluded.hidden_categories,
-                hidden_areas=excluded.hidden_areas,
-                hidden_senders=excluded.hidden_senders,
-                page_size=excluded.page_size
-            """,
-            (user["id"], cats, areas, senders, page_size),
-        )
-        conn.commit()
+    save_bulletin_preferences_for_user(user["id"], hidden_categories, hidden_areas, hidden_senders_text, page_size)
 
     return RedirectResponse("/bulletins", status_code=303)
+
+
+@app.get("/profile")
+def profile(request: Request, prefs_saved: int = Query(0)):
+    user = require_user(request)
+    categories, areas, senders = bulletin_preference_options()
+    prefs = get_bulletin_preferences(user["id"])
+    hidden_categories, hidden_areas, hidden_senders, page_size = parse_bulletin_preferences(prefs)
+
+    return templates.TemplateResponse(
+        "profile.html",
+        {
+            "request": request,
+            "user": user,
+            "categories": categories,
+            "areas": areas,
+            "senders": senders,
+            "hidden_categories": hidden_categories,
+            "hidden_areas": hidden_areas,
+            "hidden_senders": hidden_senders,
+            "page_size": page_size,
+            "prefs_message": "Preferences saved." if prefs_saved else None,
+            "password_error": None,
+            "password_message": None,
+        },
+    )
+
+
+@app.post("/profile/preferences")
+def profile_save_preferences(
+    request: Request,
+    hidden_categories: list[str] = Form(default=[]),
+    hidden_areas: list[str] = Form(default=[]),
+    hidden_senders_text: str = Form(default=""),
+    page_size: int = Form(default=25),
+):
+    user = require_user(request)
+    save_bulletin_preferences_for_user(user["id"], hidden_categories, hidden_areas, hidden_senders_text, page_size)
+    return RedirectResponse("/profile?prefs_saved=1", status_code=303)
+
+
+@app.post("/profile/password")
+def profile_change_password(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+):
+    user = require_user(request)
+    categories, areas, senders = bulletin_preference_options()
+    prefs = get_bulletin_preferences(user["id"])
+    hidden_categories, hidden_areas, hidden_senders, page_size = parse_bulletin_preferences(prefs)
+
+    password_error = None
+    password_message = None
+
+    if not pwd_context.verify(current_password, user["password_hash"]):
+        password_error = "Current password is incorrect."
+    elif len(new_password) < 8:
+        password_error = "New password must be at least 8 characters."
+    elif new_password != confirm_password:
+        password_error = "New password and confirmation do not match."
+    else:
+        with db() as conn:
+            conn.execute(
+                "update users set password_hash=? where id=?",
+                (pwd_context.hash(new_password), user["id"]),
+            )
+            conn.commit()
+        password_message = "Password updated."
+
+    return templates.TemplateResponse(
+        "profile.html",
+        {
+            "request": request,
+            "user": user,
+            "categories": categories,
+            "areas": areas,
+            "senders": senders,
+            "hidden_categories": hidden_categories,
+            "hidden_areas": hidden_areas,
+            "hidden_senders": hidden_senders,
+            "page_size": page_size,
+            "prefs_message": None,
+            "password_error": password_error,
+            "password_message": password_message,
+        },
+    )
 
 
 @app.get("/bulletin/{msg_id}")
@@ -1060,6 +1242,54 @@ def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refr
     ))
 
 
+
+
+@app.get("/admin/password-resets")
+def admin_password_resets(request: Request):
+    user = require_admin(request)
+
+    with db() as conn:
+        requests = conn.execute(
+            """
+            select id, username, callsign, message, handled, created_at, handled_at
+            from password_reset_requests
+            order by handled asc, created_at desc
+            """
+        ).fetchall()
+
+    return templates.TemplateResponse(
+        "admin_password_resets.html",
+        {"request": request, "user": user, "requests": requests},
+    )
+
+
+@app.post("/admin/password-resets/handled/{request_id}")
+def admin_password_reset_mark_handled(request: Request, request_id: int):
+    require_admin(request)
+
+    with db() as conn:
+        conn.execute(
+            """
+            update password_reset_requests
+            set handled=1, handled_at=CURRENT_TIMESTAMP
+            where id=?
+            """,
+            (request_id,),
+        )
+        conn.commit()
+
+    return RedirectResponse("/admin/password-resets", status_code=303)
+
+
+@app.post("/admin/password-resets/delete/{request_id}")
+def admin_password_reset_delete(request: Request, request_id: int):
+    require_admin(request)
+
+    with db() as conn:
+        conn.execute("delete from password_reset_requests where id=?", (request_id,))
+        conn.commit()
+
+    return RedirectResponse("/admin/password-resets", status_code=303)
 
 
 @app.get("/admin/users")

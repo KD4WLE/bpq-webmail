@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Profile</h2>
+<p class="muted">{{ user.username }} / {{ user.callsign }}</p>
+
+<form method="post" action="/profile/preferences" class="card">
+  <h3>Bulletin Preferences</h3>
+
+  {% if prefs_message %}
+    <div class="cache-notice">{{ prefs_message }}</div>
+  {% endif %}
+
+  <label>Page size</label>
+  <input type="number" name="page_size" value="{{ page_size }}" min="5" max="100">
+
+  <h3>Hide Categories</h3>
+  <div class="category-pills">
+    {% for c in categories %}
+      <label class="pill">
+        <input type="checkbox" name="hidden_categories" value="{{ c }}" {% if c in hidden_categories %}checked{% endif %}>
+        {{ c }}
+      </label>
+    {% endfor %}
+  </div>
+
+  <h3>Hide Areas</h3>
+  <div class="category-pills">
+    {% for a in areas %}
+      <label class="pill">
+        <input type="checkbox" name="hidden_areas" value="{{ a }}" {% if a in hidden_areas %}checked{% endif %}>
+        {{ a }}
+      </label>
+    {% endfor %}
+  </div>
+
+  <h3>Hide From</h3>
+  <input type="text" name="hidden_senders_text" value="{{ hidden_senders|join(',') }}" placeholder="CALL1,CALL2,CALL3">
+
+  <button type="submit">Save Preferences</button>
+</form>
+
+<form method="post" action="/profile/password" class="card">
+  <h3>Change Password</h3>
+
+  {% if password_error %}
+    <div class="error">{{ password_error }}</div>
+  {% endif %}
+
+  {% if password_message %}
+    <div class="cache-notice">{{ password_message }}</div>
+  {% endif %}
+
+  <label>Current Password</label>
+  <input type="password" name="current_password" autocomplete="current-password" required>
+
+  <label>New Password</label>
+  <input type="password" name="new_password" autocomplete="new-password" required>
+
+  <label>Confirm New Password</label>
+  <input type="password" name="confirm_password" autocomplete="new-password" required>
+
+  <button type="submit">Change Password</button>
+</form>
+
+{% endblock %}
