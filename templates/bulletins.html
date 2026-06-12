@@ -17,7 +17,7 @@
 </div>
 
 <form method="get" action="/bulletins" class="filter-form">
-  <input type="text" name="q" value="{{ q }}" placeholder="Search subject, sender, category, or area">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search subject, sender, area, category, or cached body">
 
   <select name="category">
     <option value="">All Categories</option>
@@ -28,6 +28,9 @@
 
   <button type="submit">Apply</button>
   <button type="submit" name="refresh" value="1">Refresh</button>
+  {% if q %}
+    <a class="button" href="/bulletins{% if category %}?category={{ category|urlencode }}{% endif %}">Clear Search</a>
+  {% endif %}
   <a class="button" href="/bulletins">Clear</a>
   <a class="button" href="/bulletins/preferences">Filters</a>
 </form>

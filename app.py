@@ -468,6 +468,7 @@ LB_CACHE = {
     "timestamp": 0,
     "messages": [],
     "raw_output": "",
+    "body_cache": {},
 }
 
 LB_CACHE_SECONDS = 60
@@ -583,6 +584,21 @@ def read_bulletin_body(user, msg_id: int) -> str:
             return response
 
     return "\n\n".join(responses)
+
+
+def bulletin_matches_query(message: dict, query: str, body_cache: dict) -> bool:
+    q = query.lower()
+    fields = (
+        message.get("subject", ""),
+        message.get("from", ""),
+        message.get("area", ""),
+        message.get("category", ""),
+    )
+    if any(q in str(value).lower() for value in fields):
+        return True
+
+    cached_body = body_cache.get(str(message.get("id")))
+    return bool(cached_body and q in cached_body.lower())
 
 
 def apply_bulletin_preferences(messages: list[dict], prefs) -> tuple[list[dict], int]:
@@ -708,13 +724,10 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
         messages = [m for m in messages if m["category"].strip().upper() == category]
 
     if q:
-        q_lower = q.lower()
+        body_cache = LB_CACHE.get("body_cache", {})
         messages = [
             m for m in messages
-            if q_lower in m["subject"].lower()
-            or q_lower in m["from"].lower()
-            or q_lower in m["category"].lower()
-            or q_lower in m["area"].lower()
+            if bulletin_matches_query(m, q, body_cache)
         ]
 
     total_messages = len(messages)
@@ -883,6 +896,8 @@ def read_bulletin(request: Request, msg_id: int):
 
     try:
         body = read_bulletin_body(user, msg_id)
+        if body:
+            LB_CACHE.setdefault("body_cache", {})[str(msg_id)] = body
 
     except Exception as e:
         error = f"Could not read bulletin {msg_id}: {e}"
