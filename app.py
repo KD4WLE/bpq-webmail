@@ -38,7 +38,7 @@ APP_ADMIN_USERNAME = env("APP_ADMIN_USERNAME", "admin")
 from dotenv import load_dotenv
 load_dotenv()
 APP_ADMIN_PASSWORD = env("APP_ADMIN_PASSWORD", "change-me-now")
-APP_VERSION = "v0.50"
+APP_VERSION = "v0.51"
 
 
 # Simple in-process TTL cache for slow BPQ/telnet views
@@ -175,6 +175,22 @@ def init_db() -> None:
                 watch_value TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(user_id, watch_type, watch_value)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                message_id TEXT NOT NULL,
+                watch_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                body TEXT NOT NULL DEFAULT '',
+                is_read INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                read_at TEXT,
+                UNIQUE(user_id, message_id, watch_id)
             )
             """
         )
@@ -322,6 +338,7 @@ def forgot_password_request(
             (username, callsign, message),
         )
         conn.commit()
+    mark_notifications_read_for_messages(user_id, clean_ids)
 
     return templates.TemplateResponse(
         "forgot_password.html",
@@ -475,6 +492,7 @@ def dashboard(request: Request):
     watches = get_watch_lists(user["id"])
     watched_bulletins = filter_watched_bulletins(bulletins, watches)
     watched_unread_count = unread_count_for_messages(user["id"], watched_bulletins)
+    notification_count = unread_notification_count(user["id"])
     latest_bulletin = bulletins[0] if bulletins else None
 
     node_count = len(NODE_CACHE["nodes"]) if "NODE_CACHE" in globals() and NODE_CACHE["nodes"] else None
@@ -494,6 +512,7 @@ def dashboard(request: Request):
             "bulletin_count": len(bulletins),
             "unread_count": unread_count,
             "watched_unread_count": watched_unread_count,
+            "notification_count": notification_count,
             "latest_bulletin": latest_bulletin,
             "node_count": node_count,
             "mheard_count": mheard_count,
@@ -722,6 +741,83 @@ def unread_count_for_messages(user_id: int, messages: list[dict]) -> int:
     message_ids = [str(m["id"]) for m in messages]
     read_ids = get_read_message_ids(user_id, message_ids)
     return sum(1 for msg_id in message_ids if msg_id not in read_ids)
+
+
+def notification_title(message: dict, watch) -> str:
+    return f"{watch['watch_type'].title()} watch matched bulletin #{message['id']}"
+
+
+def notification_body(message: dict, watch) -> str:
+    subject = message.get("subject", "(no subject)")
+    return f"{watch['watch_value']} matched {message.get('from', '')} / {message.get('area', '')} / {message.get('category', '')}: {subject}"
+
+
+def sync_notifications_for_user(user_id: int) -> None:
+    messages = LB_CACHE["messages"] if "LB_CACHE" in globals() else []
+    watches = get_watch_lists(user_id)
+    if not messages or not watches:
+        return
+
+    message_ids = [str(m["id"]) for m in messages]
+    read_ids = get_read_message_ids(user_id, message_ids)
+    rows = []
+
+    for message in messages:
+        msg_id = str(message["id"])
+        if msg_id in read_ids:
+            continue
+        for watch in watches:
+            if bulletin_matches_watch(message, watch):
+                rows.append((
+                    user_id,
+                    msg_id,
+                    watch["id"],
+                    notification_title(message, watch),
+                    notification_body(message, watch),
+                ))
+
+    if not rows:
+        return
+
+    with db() as conn:
+        conn.executemany(
+            """
+            insert or ignore into notifications (user_id, message_id, watch_id, title, body)
+            values (?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+        conn.commit()
+
+
+def unread_notification_count(user_id: int) -> int:
+    sync_notifications_for_user(user_id)
+    with db() as conn:
+        return conn.execute(
+            "select count(*) from notifications where user_id=? and is_read=0",
+            (user_id,),
+        ).fetchone()[0]
+
+
+def mark_notifications_read_for_messages(user_id: int, message_ids: list[str]) -> None:
+    clean_ids = sorted({str(message_id).strip() for message_id in message_ids if str(message_id).strip()})
+    if not clean_ids:
+        return
+
+    placeholders = ",".join("?" for _ in clean_ids)
+    with db() as conn:
+        conn.execute(
+            f"""
+            update notifications
+            set is_read=1, read_at=CURRENT_TIMESTAMP
+            where user_id=? and message_id in ({placeholders})
+            """,
+            [user_id, *clean_ids],
+        )
+        conn.commit()
+
+
+templates.env.globals["unread_notification_count"] = unread_notification_count
 
 
 def apply_bulletin_preferences(messages: list[dict], prefs) -> tuple[list[dict], int]:
@@ -978,6 +1074,73 @@ def delete_watchlist(request: Request, watch_id: int):
         conn.commit()
 
     return RedirectResponse("/watchlists", status_code=303)
+
+
+@app.get("/notifications")
+def notifications(request: Request):
+    user = require_user(request)
+    sync_notifications_for_user(user["id"])
+
+    with db() as conn:
+        rows = conn.execute(
+            """
+            select n.id, n.message_id, n.watch_id, n.title, n.body, n.is_read, n.created_at, n.read_at,
+                   w.watch_type, w.watch_value
+            from notifications n
+            left join watch_lists w on w.id=n.watch_id
+            where n.user_id=?
+            order by n.is_read asc, n.created_at desc
+            limit 100
+            """,
+            (user["id"],),
+        ).fetchall()
+
+    unread_count = sum(1 for row in rows if not row["is_read"])
+    return templates.TemplateResponse(
+        "notifications.html",
+        {
+            "request": request,
+            "user": user,
+            "notifications": rows,
+            "unread_count": unread_count,
+        },
+    )
+
+
+@app.post("/notifications/read/{notification_id}")
+def mark_notification_read(request: Request, notification_id: int):
+    user = require_user(request)
+
+    with db() as conn:
+        conn.execute(
+            """
+            update notifications
+            set is_read=1, read_at=CURRENT_TIMESTAMP
+            where id=? and user_id=?
+            """,
+            (notification_id, user["id"]),
+        )
+        conn.commit()
+
+    return RedirectResponse("/notifications", status_code=303)
+
+
+@app.post("/notifications/read-all")
+def mark_all_notifications_read(request: Request):
+    user = require_user(request)
+
+    with db() as conn:
+        conn.execute(
+            """
+            update notifications
+            set is_read=1, read_at=CURRENT_TIMESTAMP
+            where user_id=? and is_read=0
+            """,
+            (user["id"],),
+        )
+        conn.commit()
+
+    return RedirectResponse("/notifications", status_code=303)
 
 
 @app.get("/bulletins/preferences")

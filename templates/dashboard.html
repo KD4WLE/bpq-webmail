@@ -29,6 +29,14 @@
     </div>
   </a>
 
+  <a class="dash-card" href="/notifications">
+    <div class="dash-icon">🔔</div>
+    <div>
+      <h3>Notifications</h3>
+      <p>{{ notification_count }} unread notifications</p>
+    </div>
+  </a>
+
   {% if latest_bulletin %}
   <a class="dash-card" href="/bulletin/{{ latest_bulletin.id }}">
     <div class="dash-icon">🗓️</div>

@@ -28,6 +28,7 @@
         <a href="/connections">🔗 Connections</a>
         <a href="/compose">✍️ Compose</a>
         {% if user %}
+          <a href="/notifications">🔔 Notifications{% set nav_notification_count = unread_notification_count(user.id) %}{% if nav_notification_count %} ({{ nav_notification_count }}){% endif %}</a>
           <a href="/watchlists">⭐ Watch Lists</a>
           <a href="/profile">⚙️ Profile</a>
           {% if user.is_admin %}

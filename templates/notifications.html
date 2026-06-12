@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Notifications</h2>
+<p class="muted">{{ unread_count }} unread notifications.</p>
+
+{% if notifications %}
+  <form method="post" action="/notifications/read-all">
+    <button type="submit">Mark all notifications read</button>
+  </form>
+
+  <table>
+    <tr>
+      <th>Status</th>
+      <th>Notification</th>
+      <th>Watch</th>
+      <th>Created</th>
+      <th>Actions</th>
+    </tr>
+    {% for n in notifications %}
+    <tr>
+      <td>{% if n.is_read %}<span class="muted">Read</span>{% else %}<strong>New</strong>{% endif %}</td>
+      <td>
+        <a href="/bulletin/{{ n.message_id }}">{{ n.title }}</a><br>
+        <span class="muted">{{ n.body }}</span>
+      </td>
+      <td>{{ n.watch_type or "watch" }} / {{ n.watch_value or "deleted" }}</td>
+      <td>{{ n.created_at }}</td>
+      <td>
+        {% if not n.is_read %}
+        <form method="post" action="/notifications/read/{{ n.id }}" style="display:inline;">
+          <button type="submit">Mark Read</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+{% else %}
+  <div class="card">
+    <h3>No notifications</h3>
+    <p class="muted">Unread watched bulletins will appear here.</p>
+  </div>
+{% endif %}
+
+{% endblock %}
