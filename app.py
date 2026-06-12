@@ -38,7 +38,7 @@ APP_ADMIN_USERNAME = env("APP_ADMIN_USERNAME", "admin")
 from dotenv import load_dotenv
 load_dotenv()
 APP_ADMIN_PASSWORD = env("APP_ADMIN_PASSWORD", "change-me-now")
-APP_VERSION = "v0.51"
+APP_VERSION = "v0.52"
 
 
 # Simple in-process TTL cache for slow BPQ/telnet views
@@ -494,6 +494,14 @@ def dashboard(request: Request):
     watched_unread_count = unread_count_for_messages(user["id"], watched_bulletins)
     notification_count = unread_notification_count(user["id"])
     latest_bulletin = bulletins[0] if bulletins else None
+    read_ids = get_read_message_ids(user["id"], [str(m["id"]) for m in bulletins])
+    recent_bulletins = [dict(m) for m in bulletins[:5]]
+    for message in recent_bulletins:
+        message["is_read"] = str(message["id"]) in read_ids
+    recent_unread_watched_bulletins = [
+        dict(m) for m in watched_bulletins
+        if str(m["id"]) not in read_ids
+    ][:5]
 
     node_count = len(NODE_CACHE["nodes"]) if "NODE_CACHE" in globals() and NODE_CACHE["nodes"] else None
     mheard_count = len(MHEARD_CACHE["heard"]) if "MHEARD_CACHE" in globals() and MHEARD_CACHE["heard"] else None
@@ -514,6 +522,9 @@ def dashboard(request: Request):
             "watched_unread_count": watched_unread_count,
             "notification_count": notification_count,
             "latest_bulletin": latest_bulletin,
+            "recent_bulletins": recent_bulletins,
+            "has_watches": bool(watches),
+            "recent_unread_watched_bulletins": recent_unread_watched_bulletins,
             "node_count": node_count,
             "mheard_count": mheard_count,
             "bulletin_cache_age": int(time.time() - LB_CACHE["timestamp"]) if "LB_CACHE" in globals() and LB_CACHE["timestamp"] else None,

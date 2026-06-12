@@ -4,20 +4,17 @@
 <h2>Dashboard</h2>
 <p class="muted">Welcome, {{ user.callsign }}.</p>
 
-<div class="dashboard-grid">
-  <a class="dash-card" href="/bulletins">
-    <div class="dash-icon">📢</div>
-    <div>
-      <h3>Cached Bulletins</h3>
-      <p>{{ bulletin_count }} total{% if bulletin_cache_age is not none %} / refreshed {{ bulletin_cache_age }}s ago{% endif %}</p>
-    </div>
-  </a>
+<p>
+  <a class="button" href="/compose">Compose Message</a>
+  <a class="button" href="/bulletins?refresh=1">Refresh Bulletin Cache</a>
+</p>
 
+<div class="dashboard-grid">
   <a class="dash-card" href="/bulletins">
     <div class="dash-icon">🆕</div>
     <div>
       <h3>Unread Bulletins</h3>
-      <p>{{ unread_count }} unread for {{ user.callsign }}</p>
+      <p>{{ unread_count }} unread / {{ bulletin_count }} cached</p>
     </div>
   </a>
 
@@ -70,77 +67,30 @@
       <p>{% if mheard_count is not none %}{{ mheard_count }} recent{% else %}No recent cache{% endif %}</p>
     </div>
   </a>
-
-  {% if user.is_admin %}
-  <a class="dash-card" href="/admin/users">
-    <div class="dash-icon">👥</div>
-    <div>
-      <h3>Users</h3>
-      <p>{{ approved_users }} approved / {{ total_users }} total</p>
-    </div>
-  </a>
-  {% endif %}
 </div>
 
-<h3>Quick Links</h3>
-<div class="dashboard-grid">
-  <a class="dash-card" href="/bulletins">
-    <div class="dash-icon">📢</div>
-    <div>
-      <h3>Bulletins</h3>
-      <p>Browse and search cached bulletins</p>
-    </div>
-  </a>
+<h3>Recent Bulletins</h3>
+{% if recent_bulletins %}
+  {% set messages = recent_bulletins %}
+  {% include "_bulletin_table.html" %}
+{% else %}
+  <div class="card">
+    <h3>No cached bulletins</h3>
+    <p class="muted">Refresh the bulletin cache to load recent messages.</p>
+  </div>
+{% endif %}
 
-  <a class="dash-card" href="/compose">
-    <div class="dash-icon">✍️</div>
-    <div>
-      <h3>Compose</h3>
-      <p>Send a packet message</p>
+{% if has_watches %}
+<h3>Watched / Important</h3>
+  {% if recent_unread_watched_bulletins %}
+    {% set messages = recent_unread_watched_bulletins %}
+    {% include "_bulletin_table.html" %}
+  {% else %}
+    <div class="card">
+      <h3>No unread watched bulletins</h3>
+      <p class="muted">Unread bulletins matching your watch lists will appear here.</p>
     </div>
-  </a>
-
-  <a class="dash-card" href="/nodes">
-    <div class="dash-icon">🌐</div>
-    <div>
-      <h3>Nodes</h3>
-      <p>View known BPQ nodes</p>
-    </div>
-  </a>
-
-  <a class="dash-card" href="/mheard">
-    <div class="dash-icon">📡</div>
-    <div>
-      <h3>MHeard</h3>
-      <p>Review recently heard stations</p>
-    </div>
-  </a>
-
-  <a class="dash-card" href="/profile">
-    <div class="dash-icon">⚙️</div>
-    <div>
-      <h3>Profile</h3>
-      <p>Preferences and password</p>
-    </div>
-  </a>
-
-  <a class="dash-card" href="/watchlists">
-    <div class="dash-icon">⭐</div>
-    <div>
-      <h3>Watch Lists</h3>
-      <p>Track senders, areas, and categories</p>
-    </div>
-  </a>
-
-  {% if user.is_admin %}
-  <a class="dash-card" href="/admin/password-resets">
-    <div class="dash-icon">🔐</div>
-    <div>
-      <h3>Admin</h3>
-      <p>Review password reset requests</p>
-    </div>
-  </a>
   {% endif %}
-</div>
+{% endif %}
 
 {% endblock %}
