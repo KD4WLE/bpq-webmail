@@ -265,7 +265,7 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid username or password."})
     if not user["approved"]:
         return templates.TemplateResponse("login.html", {"request": request, "error": "Account is waiting for approval."})
-    resp = RedirectResponse("/inbox", status_code=303)
+    resp = RedirectResponse("/dashboard", status_code=303)
     resp.set_cookie("bpq_session", signer.dumps({"user_id": user["id"]}), httponly=True, samesite="lax")
     return resp
 
@@ -456,10 +456,18 @@ def admin_toggle_user(request: Request, user_id: int):
 def dashboard(request: Request):
     user = require_user(request)
 
-    conn = sqlite3.connect(DB_PATH)
-    total_users = conn.execute("select count(*) from users").fetchone()[0]
-    approved_users = conn.execute("select count(*) from users where approved=1").fetchone()[0]
-    conn.close()
+    bulletins = LB_CACHE["messages"] if "LB_CACHE" in globals() else []
+    bulletin_ids = [str(m["id"]) for m in bulletins]
+    read_ids = get_read_message_ids(user["id"], bulletin_ids)
+    unread_count = sum(1 for msg_id in bulletin_ids if msg_id not in read_ids)
+    latest_bulletin = bulletins[0] if bulletins else None
+
+    node_count = len(NODE_CACHE["nodes"]) if "NODE_CACHE" in globals() and NODE_CACHE["nodes"] else None
+    mheard_count = len(MHEARD_CACHE["heard"]) if "MHEARD_CACHE" in globals() and MHEARD_CACHE["heard"] else None
+
+    with db() as conn:
+        total_users = conn.execute("select count(*) from users").fetchone()[0]
+        approved_users = conn.execute("select count(*) from users where approved=1").fetchone()[0]
 
     return templates.TemplateResponse(
         "dashboard.html",
@@ -468,9 +476,14 @@ def dashboard(request: Request):
             "user": user,
             "total_users": total_users,
             "approved_users": approved_users,
-            "portal_version": "v0.46",
-            "bulletin_count": len(LB_CACHE["messages"]) if "LB_CACHE" in globals() else 0,
-            "latest_bulletin": LB_CACHE["messages"][0]["id"] if "LB_CACHE" in globals() and LB_CACHE["messages"] else "Unknown",
+            "bulletin_count": len(bulletins),
+            "unread_count": unread_count,
+            "latest_bulletin": latest_bulletin,
+            "node_count": node_count,
+            "mheard_count": mheard_count,
+            "bulletin_cache_age": int(time.time() - LB_CACHE["timestamp"]) if "LB_CACHE" in globals() and LB_CACHE["timestamp"] else None,
+            "node_cache_age": int(time.time() - NODE_CACHE["timestamp"]) if "NODE_CACHE" in globals() and NODE_CACHE["timestamp"] else None,
+            "mheard_cache_age": int(time.time() - MHEARD_CACHE["timestamp"]) if "MHEARD_CACHE" in globals() and MHEARD_CACHE["timestamp"] else None,
         },
     )
 
@@ -480,6 +493,11 @@ LB_CACHE = {
     "messages": [],
     "raw_output": "",
     "body_cache": {},
+}
+
+MHEARD_CACHE = {
+    "timestamp": 0,
+    "heard": [],
 }
 
 LB_CACHE_SECONDS = 60
@@ -1044,6 +1062,10 @@ def mheard(request: Request, port: str = Query("all")):
 
     except Exception as e:
         error = f"Could not load MHeard list: {e}"
+
+    if not error:
+        MHEARD_CACHE["timestamp"] = time.time()
+        MHEARD_CACHE["heard"] = heard
 
     return ttl_cache_set(cache_key, templates.TemplateResponse(
         "mheard.html",

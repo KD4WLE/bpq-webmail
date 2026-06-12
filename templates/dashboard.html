@@ -2,31 +2,77 @@
 {% block content %}
 
 <h2>Dashboard</h2>
-<p class="muted">Welcome, {{ user["callsign"] }}.</p>
+<p class="muted">Welcome, {{ user.callsign }}.</p>
 
 <div class="dashboard-grid">
-
-  <a class="dash-card" href="/">
-    <div class="dash-icon">📥</div>
+  <a class="dash-card" href="/bulletins">
+    <div class="dash-icon">📢</div>
     <div>
-      <h3>Inbox</h3>
-      <p>Read private BPQ messages</p>
+      <h3>Cached Bulletins</h3>
+      <p>{{ bulletin_count }} total{% if bulletin_cache_age is not none %} / refreshed {{ bulletin_cache_age }}s ago{% endif %}</p>
     </div>
   </a>
 
   <a class="dash-card" href="/bulletins">
-    <div class="dash-icon">📢</div>
+    <div class="dash-icon">🆕</div>
     <div>
-      <h3>Bulletins</h3>
-      <p>{{ bulletin_count }} cached bulletins</p>
+      <h3>Unread Bulletins</h3>
+      <p>{{ unread_count }} unread for {{ user.callsign }}</p>
     </div>
   </a>
 
-  <a class="dash-card" href="/bulletin/{{ latest_bulletin }}">
-    <div class="dash-icon">🆕</div>
+  {% if latest_bulletin %}
+  <a class="dash-card" href="/bulletin/{{ latest_bulletin.id }}">
+    <div class="dash-icon">🗓️</div>
     <div>
       <h3>Latest Bulletin</h3>
-      <p>{{ latest_bulletin }}</p>
+      <p>{{ latest_bulletin.date }} / #{{ latest_bulletin.id }}</p>
+    </div>
+  </a>
+  {% else %}
+  <div class="dash-card">
+    <div class="dash-icon">🗓️</div>
+    <div>
+      <h3>Latest Bulletin</h3>
+      <p>No cached bulletins yet</p>
+    </div>
+  </div>
+  {% endif %}
+
+  <a class="dash-card" href="/nodes">
+    <div class="dash-icon">🌐</div>
+    <div>
+      <h3>Nodes</h3>
+      <p>{% if node_count is not none %}{{ node_count }} cached{% else %}No cached node list{% endif %}</p>
+    </div>
+  </a>
+
+  <a class="dash-card" href="/mheard">
+    <div class="dash-icon">📡</div>
+    <div>
+      <h3>MHeard</h3>
+      <p>{% if mheard_count is not none %}{{ mheard_count }} recent{% else %}No recent cache{% endif %}</p>
+    </div>
+  </a>
+
+  {% if user.is_admin %}
+  <a class="dash-card" href="/admin/users">
+    <div class="dash-icon">👥</div>
+    <div>
+      <h3>Users</h3>
+      <p>{{ approved_users }} approved / {{ total_users }} total</p>
+    </div>
+  </a>
+  {% endif %}
+</div>
+
+<h3>Quick Links</h3>
+<div class="dashboard-grid">
+  <a class="dash-card" href="/bulletins">
+    <div class="dash-icon">📢</div>
+    <div>
+      <h3>Bulletins</h3>
+      <p>Browse and search cached bulletins</p>
     </div>
   </a>
 
@@ -38,22 +84,39 @@
     </div>
   </a>
 
-  <a class="dash-card" href="/admin/users">
-    <div class="dash-icon">👥</div>
+  <a class="dash-card" href="/nodes">
+    <div class="dash-icon">🌐</div>
     <div>
-      <h3>Users</h3>
-      <p>{{ approved_users }} approved / {{ total_users }} total</p>
+      <h3>Nodes</h3>
+      <p>View known BPQ nodes</p>
     </div>
   </a>
 
-  <div class="dash-card">
+  <a class="dash-card" href="/mheard">
     <div class="dash-icon">📡</div>
     <div>
-      <h3>Node Status</h3>
-      <p>Online</p>
+      <h3>MHeard</h3>
+      <p>Review recently heard stations</p>
     </div>
-  </div>
+  </a>
 
+  <a class="dash-card" href="/profile">
+    <div class="dash-icon">⚙️</div>
+    <div>
+      <h3>Profile</h3>
+      <p>Preferences and password</p>
+    </div>
+  </a>
+
+  {% if user.is_admin %}
+  <a class="dash-card" href="/admin/password-resets">
+    <div class="dash-icon">🔐</div>
+    <div>
+      <h3>Admin</h3>
+      <p>Review password reset requests</p>
+    </div>
+  </a>
+  {% endif %}
 </div>
 
 {% endblock %}
