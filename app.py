@@ -1785,6 +1785,40 @@ def admin_password_reset_delete(request: Request, request_id: int):
     return RedirectResponse("/admin/password-resets", status_code=303)
 
 
+@app.post("/admin/users/new")
+def admin_users_new(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    callsign: str = Form(...),
+    bpq_user: str = Form(...),
+    bpq_password: str = Form(...),
+):
+    require_admin(request)
+
+    username = username.strip()
+    callsign = callsign.strip().upper()
+    bpq_user = bpq_user.strip()
+
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT INTO users
+            (username, password_hash, callsign, bpq_user, bpq_password, approved, is_admin)
+            VALUES (?, ?, ?, ?, ?, 1, 0)
+            """,
+            (
+                username,
+                pwd_context.hash(password),
+                callsign,
+                bpq_user,
+                bpq_password,
+            ),
+        )
+
+    return RedirectResponse("/admin/users", status_code=303)
+
+
 @app.get("/admin/users")
 def admin_users(request: Request):
     user = require_user(request)
