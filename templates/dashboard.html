@@ -10,6 +10,20 @@
 </p>
 
 <div class="dashboard-grid">
+  <a class="dash-card" href="/inbox">
+    <div class="dash-icon">📥</div>
+    <div>
+      <h3>New Mail</h3>
+      <p>
+        {% if new_mail_count is not none %}
+          {{ new_mail_count }} in mailbox
+        {% else %}
+          Mail count unavailable
+        {% endif %}
+      </p>
+    </div>
+  </a>
+
   <a class="dash-card" href="/bulletins">
     <div class="dash-icon">🆕</div>
     <div>

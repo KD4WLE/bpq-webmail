@@ -540,6 +540,21 @@ def admin_toggle_user(request: Request, user_id: int):
 def dashboard(request: Request):
     user = require_user(request)
 
+    new_mail_count = None
+    mail_error = None
+    client = None
+    try:
+        client = pop3_client(user)
+        new_mail_count, _ = client.stat()
+    except Exception as exc:
+        mail_error = f"Could not load mailbox count: {exc}"
+    finally:
+        if client:
+            try:
+                client.quit()
+            except Exception:
+                pass
+
     bulletins = LB_CACHE["messages"] if "LB_CACHE" in globals() else []
     unread_count = unread_count_for_messages(user["id"], bulletins)
     watches = get_watch_lists(user["id"])
@@ -570,6 +585,8 @@ def dashboard(request: Request):
             "user": user,
             "total_users": total_users,
             "approved_users": approved_users,
+            "new_mail_count": new_mail_count,
+            "mail_error": mail_error,
             "bulletin_count": len(bulletins),
             "unread_count": unread_count,
             "watched_unread_count": watched_unread_count,
