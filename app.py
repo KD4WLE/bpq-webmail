@@ -38,7 +38,7 @@ APP_ADMIN_USERNAME = env("APP_ADMIN_USERNAME", "admin")
 from dotenv import load_dotenv
 load_dotenv()
 APP_ADMIN_PASSWORD = env("APP_ADMIN_PASSWORD", "change-me-now")
-APP_VERSION = "v0.52"
+APP_VERSION = "v0.54"
 
 
 # Simple in-process TTL cache for slow BPQ/telnet views
