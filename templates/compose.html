@@ -4,13 +4,42 @@
   <h1>Compose</h1>
   {% if error %}<div class="error">{{ error }}</div>{% endif %}
   <form method="post" action="/compose">
-    <label>To</label>
-    <input name="to" value="{{ to }}" placeholder="CALLSIGN or address" required>
+    <label>Message Type</label>
+    <select name="mode" id="compose-mode">
+      {% for mode_key, mode_config in modes.items() %}
+        <option
+          value="{{ mode_key }}"
+          data-recipient-label="{{ mode_config.recipient_label }}"
+          data-recipient-placeholder="{{ mode_config.recipient_placeholder }}"
+          {% if mode == mode_key %}selected{% endif %}
+        >
+          {{ mode_config.label }}
+        </option>
+      {% endfor %}
+    </select>
+
+    <label id="compose-recipient-label">{{ modes[mode].recipient_label }}</label>
+    <input id="compose-recipient" name="to" value="{{ to }}" placeholder="{{ modes[mode].recipient_placeholder }}" required>
+
     <label>Subject</label>
     <input name="subject" value="{{ subject }}" required>
+
     <label>Message</label>
     <textarea name="body" rows="12" required>{{ body }}</textarea>
+
     <button type="submit">Send</button>
   </form>
 </div>
+
+<script>
+  const composeMode = document.getElementById("compose-mode");
+  const recipientLabel = document.getElementById("compose-recipient-label");
+  const recipientInput = document.getElementById("compose-recipient");
+
+  composeMode.addEventListener("change", () => {
+    const selected = composeMode.options[composeMode.selectedIndex];
+    recipientLabel.textContent = selected.dataset.recipientLabel;
+    recipientInput.placeholder = selected.dataset.recipientPlaceholder;
+  });
+</script>
 {% endblock %}

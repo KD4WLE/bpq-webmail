@@ -7,7 +7,7 @@
   <p><strong>To:</strong> {{ message.to }}</p>
   <p><strong>Date:</strong> {{ message.date }}</p>
   <div>
-    <a class="button" href="/compose?to={{ message.from | urlencode }}&subject=Re:%20{{ message.subject | urlencode }}">Reply</a>
+    <a class="button" href="/compose?mode=private&to={{ message.from | urlencode }}&subject=Re:%20{{ message.subject | urlencode }}">Reply</a>
     <form method="post" action="/message/{{ message_id }}/kill" style="display:inline;" onsubmit="return confirm('Kill this message?');">
       <button type="submit">Kill</button>
     </form>

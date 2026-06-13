@@ -40,6 +40,33 @@ load_dotenv()
 APP_ADMIN_PASSWORD = env("APP_ADMIN_PASSWORD", "change-me-now")
 APP_VERSION = "v0.54"
 
+COMPOSE_MODES = {
+    "private": {
+        "label": "Private Message",
+        "command": env("BPQ_COMPOSE_PRIVATE_COMMAND", "sp"),
+        "recipient_label": "To",
+        "recipient_placeholder": "CALLSIGN or address",
+    },
+    "bulletin": {
+        "label": "Bulletin",
+        "command": env("BPQ_COMPOSE_BULLETIN_COMMAND", "sb"),
+        "recipient_label": "Bulletin Category / Area",
+        "recipient_placeholder": "CATEGORY or @AREA",
+    },
+    "nts": {
+        "label": "NTS",
+        "command": env("BPQ_COMPOSE_NTS_COMMAND", "st"),
+        "recipient_label": "NTS Destination",
+        "recipient_placeholder": "NTS destination",
+    },
+    "winlink": {
+        "label": "Winlink",
+        "command": env("BPQ_COMPOSE_WINLINK_COMMAND", "sp"),
+        "recipient_label": "Winlink Address",
+        "recipient_placeholder": "CALLSIGN or user@example.org",
+    },
+}
+
 
 # Simple in-process TTL cache for slow BPQ/telnet views
 _CACHE = {}
@@ -447,15 +474,51 @@ def kill_message(request: Request, message_id: int):
 
 
 @app.get("/compose", response_class=HTMLResponse)
-def compose_form(request: Request, to: str = "", subject: str = ""):
+def compose_form(request: Request, to: str = "", subject: str = "", mode: str = "private"):
     user = require_user(request)
-    return templates.TemplateResponse("compose.html", {"request": request, "user": user, "to": to, "subject": subject, "body": "", "error": None})
+    if mode not in COMPOSE_MODES:
+        mode = "private"
+    return templates.TemplateResponse(
+        "compose.html",
+        {
+            "request": request,
+            "user": user,
+            "to": to,
+            "subject": subject,
+            "body": "",
+            "error": None,
+            "mode": mode,
+            "modes": COMPOSE_MODES,
+        },
+    )
 
 
 @app.post("/compose", response_class=HTMLResponse)
-def compose_send(request: Request, to: str = Form(...), subject: str = Form(...), body: str = Form(...)):
+def compose_send(
+    request: Request,
+    mode: str = Form("private"),
+    to: str = Form(...),
+    subject: str = Form(...),
+    body: str = Form(...),
+):
     user = require_user(request)
     output = ""
+    mode_config = COMPOSE_MODES.get(mode)
+
+    if not mode_config:
+        return templates.TemplateResponse(
+            "compose.html",
+            {
+                "request": request,
+                "user": user,
+                "to": to,
+                "subject": subject,
+                "body": body,
+                "error": "Invalid compose mode.",
+                "mode": "private",
+                "modes": COMPOSE_MODES,
+            },
+        )
 
     try:
         tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=15)
@@ -473,7 +536,7 @@ def compose_send(request: Request, to: str = Form(...), subject: str = Form(...)
         time.sleep(1)
         output += tn.read_very_eager().decode(errors="ignore")
 
-        tn.write((f"sp {to.strip()}\r").encode())
+        tn.write((f"{mode_config['command']} {to.strip()}\r").encode())
         time.sleep(1)
         output += tn.read_very_eager().decode(errors="ignore")
 
@@ -508,7 +571,9 @@ def compose_send(request: Request, to: str = Form(...), subject: str = Form(...)
                 "to": to,
                 "subject": subject,
                 "body": body,
-                "error": "BBS send response:\n\n" + output,
+                "error": f"{mode_config['label']} send response:\n\n" + output,
+                "mode": mode,
+                "modes": COMPOSE_MODES,
             },
         )
 
@@ -522,6 +587,8 @@ def compose_send(request: Request, to: str = Form(...), subject: str = Form(...)
                 "subject": subject,
                 "body": body,
                 "error": f"Could not send via LinBPQ BBS: {exc}\n\n{output}",
+                "mode": mode if mode in COMPOSE_MODES else "private",
+                "modes": COMPOSE_MODES,
             },
         )
 
