@@ -1673,6 +1673,8 @@ NODE_CACHE_SECONDS = 300
 def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refresh: int = Query(0)):
     user = get_session_user(request)
     error = None
+    nodes = NODE_CACHE["nodes"]
+    raw_output = NODE_CACHE["raw_output"]
 
     now = time.time()
 
