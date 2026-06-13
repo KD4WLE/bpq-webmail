@@ -4,6 +4,14 @@
 <h2>MHeard</h2>
 <p class="muted">Stations recently heard by BPQ port.</p>
 
+<div class="cache-notice">
+  {% if cache_age is none %}
+    MHeard cache has not been refreshed yet.
+  {% else %}
+    MHeard cache loaded {{ cache_age }} seconds ago.
+  {% endif %}
+</div>
+
 <div class="category-pills">
   <a class="pill {% if selected_port == 'all' %}active{% endif %}" href="/mheard">All</a>
   {% for pnum, pname in ports.items() %}

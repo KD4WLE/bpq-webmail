@@ -246,6 +246,28 @@ def require_admin(request: Request) -> sqlite3.Row:
     return user
 
 
+def get_bpq_service_user() -> Optional[sqlite3.Row]:
+    with db() as conn:
+        user = conn.execute(
+            """
+            SELECT * FROM users
+            WHERE approved = 1 AND is_admin = 1
+            ORDER BY id
+            LIMIT 1
+            """
+        ).fetchone()
+        if user:
+            return user
+        return conn.execute(
+            """
+            SELECT * FROM users
+            WHERE approved = 1
+            ORDER BY id
+            LIMIT 1
+            """
+        ).fetchone()
+
+
 def parse_pop_message(raw_lines: list[bytes]) -> dict:
     raw = b"\r\n".join(raw_lines)
     msg = BytesParser(policy=default).parsebytes(raw)
@@ -546,7 +568,27 @@ MHEARD_CACHE = {
     "heard": [],
 }
 
+CONNECTIONS_CACHE = {
+    "timestamp": 0,
+    "uplinks": [],
+    "circuits": [],
+    "lines": [],
+    "raw_output": "",
+}
+
+NODE_STATUS_CACHE = {
+    "timestamp": 0,
+    "ports": [],
+    "version_line": "",
+    "connection_count": 0,
+    "raw_ports": "",
+    "raw_users": "",
+}
+
 LB_CACHE_SECONDS = 60
+MHEARD_CACHE_SECONDS = 300
+CONNECTIONS_CACHE_SECONDS = 60
+NODE_STATUS_CACHE_SECONDS = 60
 
 BULLETIN_DATE_RE = _re.compile(r"^\d{1,2}-[A-Za-z]{3}$")
 BULLETIN_CALL_RE = _re.compile(r"^[A-Za-z]{1,3}\d[A-Za-z0-9/.-]*$")
@@ -659,6 +701,176 @@ def read_bulletin_body(user, msg_id: int) -> str:
             return response
 
     return "\n\n".join(responses)
+
+
+def refresh_mheard_cache(user, ports: dict[str, str]) -> None:
+    heard = []
+    tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
+    try:
+        tn.read_until(b"Username:", timeout=10)
+        tn.write((user["bpq_user"] + "\r").encode())
+
+        tn.read_until(b"Password:", timeout=10)
+        tn.write((user["bpq_password"] + "\r").encode())
+
+        time.sleep(1)
+        tn.read_very_eager()
+
+        for pnum, pname in ports.items():
+            tn.write((f"mh {pnum}\r").encode())
+            time.sleep(1)
+            output = tn.read_very_eager().decode(errors="ignore")
+
+            for line in output.splitlines():
+                parts = line.split()
+                if len(parts) >= 2 and ":" in parts[1]:
+                    heard.append({
+                        "port": pnum,
+                        "port_name": pname,
+                        "callsign": parts[0],
+                        "last_heard": parts[1],
+                        "extra": " ".join(parts[2:]) if len(parts) > 2 else "",
+                    })
+
+        tn.write(b"bye\r")
+    finally:
+        try:
+            tn.close()
+        except Exception:
+            pass
+
+    MHEARD_CACHE["timestamp"] = time.time()
+    MHEARD_CACHE["heard"] = heard
+
+
+def refresh_connections_cache(user) -> None:
+    output = bpq_command(user, "users", timeout=10, settle=1.0)
+    lines = []
+    circuits = []
+    uplinks = []
+
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        if line.startswith("TITUS1:") or "G8BPQ Network System" in line:
+            continue
+
+        if line.startswith("TNC Uplink"):
+            uplinks.append(line)
+            continue
+
+        if "Circuit(" in line:
+            circuits.append(line)
+            continue
+
+        lines.append(line)
+
+    CONNECTIONS_CACHE["timestamp"] = time.time()
+    CONNECTIONS_CACHE["uplinks"] = uplinks
+    CONNECTIONS_CACHE["circuits"] = circuits
+    CONNECTIONS_CACHE["lines"] = lines
+    CONNECTIONS_CACHE["raw_output"] = output
+
+
+def refresh_node_status_cache(user) -> None:
+    ports = []
+    version_line = ""
+    connection_count = 0
+    raw_ports = ""
+    raw_users = ""
+
+    tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
+    try:
+        tn.read_until(b"Username:", timeout=10)
+        tn.write((user["bpq_user"] + "\r").encode())
+
+        tn.read_until(b"Password:", timeout=10)
+        tn.write((user["bpq_password"] + "\r").encode())
+
+        time.sleep(1)
+        tn.read_very_eager()
+
+        tn.write(b"po\r")
+        time.sleep(1)
+        raw_ports = tn.read_very_eager().decode(errors="ignore")
+
+        tn.write(b"users\r")
+        time.sleep(1)
+        raw_users = tn.read_very_eager().decode(errors="ignore")
+
+        tn.write(b"bye\r")
+    finally:
+        try:
+            tn.close()
+        except Exception:
+            pass
+
+    for line in raw_ports.splitlines():
+        clean = line.strip()
+
+        if "G8BPQ Network System" in clean:
+            version_line = clean
+
+        if clean.startswith("TITUS1:"):
+            continue
+
+        if " Port " in clean and clean[0:2].strip().isdigit():
+            parts = clean.split(None, 1)
+            if len(parts) == 2:
+                ports.append({
+                    "number": parts[0],
+                    "description": parts[1],
+                })
+
+    for line in raw_users.splitlines():
+        if "Circuit(" in line or line.strip().startswith("TNC Uplink"):
+            connection_count += 1
+
+    NODE_STATUS_CACHE["timestamp"] = time.time()
+    NODE_STATUS_CACHE["ports"] = ports
+    NODE_STATUS_CACHE["version_line"] = version_line
+    NODE_STATUS_CACHE["connection_count"] = connection_count
+    NODE_STATUS_CACHE["raw_ports"] = raw_ports
+    NODE_STATUS_CACHE["raw_users"] = raw_users
+
+
+def refresh_nodes_cache(user) -> None:
+    raw_output = bpq_command(user, "nodes", timeout=15, settle=1.0)
+    nodes = []
+    in_nodes_section = False
+
+    for line in raw_output.splitlines():
+        clean = line.strip()
+
+        if not clean:
+            continue
+
+        if clean == "Nodes" or clean.endswith("} Nodes") or clean.endswith(":Nodes") or clean.lower().endswith(" nodes"):
+            in_nodes_section = True
+            continue
+
+        if not in_nodes_section or clean.startswith("TITUS1:"):
+            continue
+
+        for token in clean.split():
+            if ":" in token:
+                alias, callsign = token.split(":", 1)
+                nodes.append({
+                    "alias": alias.strip(),
+                    "callsign": callsign.strip(),
+                })
+            elif "-" in token or token.isalnum():
+                if token not in ["Nodes"]:
+                    nodes.append({
+                        "alias": "",
+                        "callsign": token.strip(),
+                    })
+
+    NODE_CACHE["timestamp"] = time.time()
+    NODE_CACHE["nodes"] = nodes
+    NODE_CACHE["raw_output"] = raw_output
 
 
 def bulletin_matches_query(message: dict, query: str, body_cache: dict) -> bool:
@@ -1308,12 +1520,7 @@ def read_bulletin(request: Request, msg_id: int):
 
 @app.get("/mheard")
 def mheard(request: Request, port: str = Query("all")):
-    cache_key = f"mheard:{port}"
-    cached = ttl_cache_get(cache_key, 30)
-    if cached is not None:
-        return cached
-
-    user = require_user(request)
+    user = get_session_user(request)
     ports = {
         "1": "AX/IP/UDP",
         "2": "Internet Gateway",
@@ -1321,53 +1528,26 @@ def mheard(request: Request, port: str = Query("all")):
         "9": "Net44",
         "10": "AREDN",
     }
-
-    selected_ports = list(ports.keys()) if port == "all" else [port]
-    heard = []
     error = None
 
-    try:
-        tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
+    if port != "all" and port not in ports:
+        port = "all"
 
-        tn.read_until(b"Username:", timeout=10)
-        tn.write((user["bpq_user"] + "\r").encode())
+    if not MHEARD_CACHE["heard"] or time.time() - MHEARD_CACHE["timestamp"] > MHEARD_CACHE_SECONDS:
+        service_user = get_bpq_service_user()
+        if service_user:
+            try:
+                refresh_mheard_cache(service_user, ports)
+            except Exception as e:
+                error = f"Could not refresh MHeard cache: {e}"
+        else:
+            error = "No approved BPQ account is available to refresh the MHeard cache."
 
-        tn.read_until(b"Password:", timeout=10)
-        tn.write((user["bpq_password"] + "\r").encode())
+    heard = MHEARD_CACHE["heard"]
+    if port != "all":
+        heard = [h for h in heard if h["port"] == port]
 
-        time.sleep(1)
-        tn.read_very_eager()
-
-        for pnum in selected_ports:
-            if pnum not in ports:
-                continue
-
-            tn.write((f"mh {pnum}\r").encode())
-            time.sleep(1)
-            output = tn.read_very_eager().decode(errors="ignore")
-
-            for line in output.splitlines():
-                parts = line.split()
-                if len(parts) >= 2 and ":" in parts[1]:
-                    heard.append({
-                        "port": pnum,
-                        "port_name": ports[pnum],
-                        "callsign": parts[0],
-                        "last_heard": parts[1],
-                        "extra": " ".join(parts[2:]) if len(parts) > 2 else "",
-                    })
-
-        tn.write(b"bye\r")
-        tn.close()
-
-    except Exception as e:
-        error = f"Could not load MHeard list: {e}"
-
-    if not error:
-        MHEARD_CACHE["timestamp"] = time.time()
-        MHEARD_CACHE["heard"] = heard
-
-    return ttl_cache_set(cache_key, templates.TemplateResponse(
+    return templates.TemplateResponse(
         "mheard.html",
         {
             "request": request,
@@ -1376,8 +1556,9 @@ def mheard(request: Request, port: str = Query("all")):
             "selected_port": port,
             "heard": heard,
             "error": error,
+            "cache_age": int(time.time() - MHEARD_CACHE["timestamp"]) if MHEARD_CACHE["timestamp"] else None,
         },
-    ))
+    )
 
 
 def refresh_bulletin_cache_background():
@@ -1414,112 +1595,47 @@ def start_bulletin_cache_worker():
 
 @app.get("/connections")
 def connections(request: Request):
-    cached = ttl_cache_get("connections", 10)
-    if cached is not None:
-        return cached
-
-    user = require_user(request)
-    lines = []
-    circuits = []
-    uplinks = []
+    user = get_session_user(request)
     error = None
 
-    try:
-        output = bpq_command(user, "users", timeout=10, settle=1.0)
+    if not CONNECTIONS_CACHE["timestamp"] or time.time() - CONNECTIONS_CACHE["timestamp"] > CONNECTIONS_CACHE_SECONDS:
+        service_user = get_bpq_service_user()
+        if service_user:
+            try:
+                refresh_connections_cache(service_user)
+            except Exception as e:
+                error = f"Could not refresh connections cache: {e}"
+        else:
+            error = "No approved BPQ account is available to refresh the connections cache."
 
-        for line in output.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-
-            if line.startswith("TITUS1:"):
-                continue
-
-            if "G8BPQ Network System" in line:
-                continue
-
-            if line.startswith("TNC Uplink"):
-                uplinks.append(line)
-                continue
-
-            if "Circuit(" in line:
-                circuits.append(line)
-                continue
-
-            lines.append(line)
-
-    except Exception as e:
-        error = f"Could not load live connections: {e}"
-
-    return ttl_cache_set("connections", templates.TemplateResponse(
+    return templates.TemplateResponse(
         "connections.html",
         {
             "request": request,
             "user": user,
-            "uplinks": uplinks,
-            "circuits": circuits,
-            "lines": lines,
+            "uplinks": CONNECTIONS_CACHE["uplinks"],
+            "circuits": CONNECTIONS_CACHE["circuits"],
+            "lines": CONNECTIONS_CACHE["lines"],
             "error": error,
+            "cache_age": int(time.time() - CONNECTIONS_CACHE["timestamp"]) if CONNECTIONS_CACHE["timestamp"] else None,
         },
-    ))
+    )
 
 
 @app.get("/node")
 def node_status(request: Request):
-    user = require_user(request)
+    user = get_session_user(request)
     error = None
-    ports = []
-    raw_ports = ""
-    raw_users = ""
-    version_line = ""
-    connection_count = 0
 
-    try:
-        tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
-
-        tn.read_until(b"Username:", timeout=10)
-        tn.write((user["bpq_user"] + "\r").encode())
-
-        tn.read_until(b"Password:", timeout=10)
-        tn.write((user["bpq_password"] + "\r").encode())
-
-        time.sleep(1)
-        tn.read_very_eager()
-
-        tn.write(b"po\r")
-        time.sleep(1)
-        raw_ports = tn.read_very_eager().decode(errors="ignore")
-
-        tn.write(b"users\r")
-        time.sleep(1)
-        raw_users = tn.read_very_eager().decode(errors="ignore")
-
-        tn.write(b"bye\r")
-        tn.close()
-
-        for line in raw_ports.splitlines():
-            clean = line.strip()
-
-            if "G8BPQ Network System" in clean:
-                version_line = clean
-
-            if clean.startswith("TITUS1:"):
-                continue
-
-            if " Port " in clean and clean[0:2].strip().isdigit():
-                parts = clean.split(None, 1)
-                if len(parts) == 2:
-                    ports.append({
-                        "number": parts[0],
-                        "description": parts[1],
-                    })
-
-        for line in raw_users.splitlines():
-            if "Circuit(" in line or line.strip().startswith("TNC Uplink"):
-                connection_count += 1
-
-    except Exception as e:
-        error = f"Could not load node status: {e}"
+    if not NODE_STATUS_CACHE["timestamp"] or time.time() - NODE_STATUS_CACHE["timestamp"] > NODE_STATUS_CACHE_SECONDS:
+        service_user = get_bpq_service_user()
+        if service_user:
+            try:
+                refresh_node_status_cache(service_user)
+            except Exception as e:
+                error = f"Could not refresh node status cache: {e}"
+        else:
+            error = "No approved BPQ account is available to refresh the node status cache."
 
     bulletin_count = len(LB_CACHE["messages"]) if "LB_CACHE" in globals() else 0
     bulletin_cache_age = int(time.time() - LB_CACHE["timestamp"]) if "LB_CACHE" in globals() and LB_CACHE["timestamp"] else None
@@ -1531,14 +1647,15 @@ def node_status(request: Request):
             "request": request,
             "user": user,
             "error": error,
-            "ports": ports,
-            "version_line": version_line,
-            "connection_count": connection_count,
+            "ports": NODE_STATUS_CACHE["ports"],
+            "version_line": NODE_STATUS_CACHE["version_line"],
+            "connection_count": NODE_STATUS_CACHE["connection_count"],
             "bulletin_count": bulletin_count,
             "bulletin_cache_age": bulletin_cache_age,
             "latest_bulletin": latest_bulletin,
-            "raw_ports": raw_ports,
-            "raw_users": raw_users,
+            "raw_ports": NODE_STATUS_CACHE["raw_ports"],
+            "raw_users": NODE_STATUS_CACHE["raw_users"],
+            "node_cache_age": int(time.time() - NODE_STATUS_CACHE["timestamp"]) if NODE_STATUS_CACHE["timestamp"] else None,
         },
     )
 
@@ -1554,62 +1671,27 @@ NODE_CACHE_SECONDS = 300
 
 @app.get("/nodes")
 def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refresh: int = Query(0)):
-    user = require_user(request)
+    user = get_session_user(request)
     error = None
-    raw_output = ""
-    nodes = []
 
     now = time.time()
 
     try:
         cache_valid = (
-            refresh != 1
+            (refresh != 1 or not user)
             and NODE_CACHE["nodes"]
             and now - NODE_CACHE["timestamp"] < NODE_CACHE_SECONDS
         )
 
-        if cache_valid:
-            nodes = NODE_CACHE["nodes"]
-            raw_output = NODE_CACHE["raw_output"]
-        else:
-            raw_output = bpq_command(user, "nodes", timeout=15, settle=1.0)
+        if not cache_valid:
+            service_user = user if user and user["approved"] else get_bpq_service_user()
+            if service_user:
+                refresh_nodes_cache(service_user)
+            else:
+                error = "No approved BPQ account is available to refresh the node cache."
 
-            in_nodes_section = False
-
-            for line in raw_output.splitlines():
-                clean = line.strip()
-
-                if not clean:
-                    continue
-
-                if clean == "Nodes" or clean.endswith("} Nodes") or clean.endswith(":Nodes") or clean.lower().endswith(" nodes"):
-                    in_nodes_section = True
-                    continue
-
-                if not in_nodes_section:
-                    continue
-
-                if clean.startswith("TITUS1:"):
-                    continue
-
-                for token in clean.split():
-                    if ":" in token:
-                        alias, callsign = token.split(":", 1)
-                        nodes.append({
-                            "alias": alias.strip(),
-                            "callsign": callsign.strip(),
-                        })
-                    elif "-" in token or token.isalnum():
-                        if token not in ["Nodes"]:
-                            nodes.append({
-                                "alias": "",
-                                "callsign": token.strip(),
-                            })
-
-            NODE_CACHE["timestamp"] = time.time()
-            NODE_CACHE["nodes"] = nodes
-            NODE_CACHE["raw_output"] = raw_output
-
+        nodes = NODE_CACHE["nodes"]
+        raw_output = NODE_CACHE["raw_output"]
         q_clean = q.strip().lower()
         if q_clean:
             nodes = [
@@ -1631,7 +1713,7 @@ def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refr
 
     cache_age = int(time.time() - NODE_CACHE["timestamp"]) if NODE_CACHE["timestamp"] else None
 
-    return ttl_cache_set("nodes", templates.TemplateResponse(
+    return templates.TemplateResponse(
         "nodes.html",
         {
             "request": request,
@@ -1650,7 +1732,7 @@ def nodes(request: Request, q: str = Query(""), page: int = Query(1, ge=1), refr
             "cache_age": cache_age,
             "cache_seconds": NODE_CACHE_SECONDS,
         },
-    ))
+    )
 
 
 

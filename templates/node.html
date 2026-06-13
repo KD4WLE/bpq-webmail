@@ -4,6 +4,14 @@
 <h2>Node Status</h2>
 <p class="muted">Live status summary from the BPQ node.</p>
 
+<div class="cache-notice">
+  {% if node_cache_age is none %}
+    Node status cache has not been refreshed yet.
+  {% else %}
+    Node status cache loaded {{ node_cache_age }} seconds ago.
+  {% endif %}
+</div>
+
 <p>
   <a class="button" href="/node">Refresh</a>
 </p>
@@ -38,13 +46,21 @@
     </div>
   </a>
 
+  {% if latest_bulletin != "Unknown" %}
   <a class="dash-card" href="/bulletin/{{ latest_bulletin }}">
+  {% else %}
+  <div class="dash-card">
+  {% endif %}
     <div class="dash-icon">🆕</div>
     <div>
       <h3>Latest Bulletin</h3>
       <p>{{ latest_bulletin }}</p>
     </div>
+  {% if latest_bulletin != "Unknown" %}
   </a>
+  {% else %}
+  </div>
+  {% endif %}
 
 </div>
 

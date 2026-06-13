@@ -4,6 +4,14 @@
 <h2>Live Connections</h2>
 <p class="muted">Current BPQ node users and circuits.</p>
 
+<div class="cache-notice">
+  {% if cache_age is none %}
+    Connections cache has not been refreshed yet.
+  {% else %}
+    Connections cache loaded {{ cache_age }} seconds ago.
+  {% endif %}
+</div>
+
 <p>
   <a class="button" href="/connections">Refresh</a>
 </p>
