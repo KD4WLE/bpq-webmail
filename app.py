@@ -380,7 +380,7 @@ def logout():
 
 
 @app.get("/inbox", response_class=HTMLResponse)
-def inbox(request: Request):
+def inbox(request: Request, status: str = Query("")):
     user = require_user(request)
     messages = []
     error = None
@@ -399,7 +399,16 @@ def inbox(request: Request):
     except Exception as exc:
         error = f"Could not connect to LinBPQ POP3: {exc}"
     messages.reverse()
-    return templates.TemplateResponse("inbox.html", {"request": request, "user": user, "messages": messages, "error": error})
+    return templates.TemplateResponse(
+        "inbox.html",
+        {
+            "request": request,
+            "user": user,
+            "messages": messages,
+            "error": error,
+            "status": status,
+        },
+    )
 
 
 @app.get("/message/{message_id}", response_class=HTMLResponse)
@@ -413,6 +422,28 @@ def message(request: Request, message_id: int):
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Could not read message: {exc}")
     return templates.TemplateResponse("message.html", {"request": request, "user": user, "message": parsed, "message_id": message_id})
+
+
+@app.post("/message/{message_id}/kill")
+def kill_message(request: Request, message_id: int):
+    user = require_user(request)
+
+    try:
+        client = pop3_client(user)
+        client.dele(message_id)
+        client.quit()
+    except Exception as exc:
+        query = urlencode({"status": f"Could not kill message {message_id}: {exc}"})
+        return RedirectResponse(
+            f"/inbox?{query}",
+            status_code=303,
+        )
+
+    query = urlencode({"status": f"Message {message_id} killed."})
+    return RedirectResponse(
+        f"/inbox?{query}",
+        status_code=303,
+    )
 
 
 @app.get("/compose", response_class=HTMLResponse)

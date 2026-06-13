@@ -3,11 +3,12 @@
 <div class="card">
   <h1>Inbox</h1>
   <p class="muted">BPQ mailbox: {{ user.bpq_user }}</p>
+  {% if status %}<div class="cache-notice">{{ status }}</div>{% endif %}
   {% if error %}<div class="error">{{ error }}</div>{% endif %}
   <p><a class="button" href="/compose">Compose</a></p>
 </div>
 <table>
-  <thead><tr><th>ID</th><th>From</th><th>Subject</th><th>Date</th></tr></thead>
+  <thead><tr><th>ID</th><th>From</th><th>Subject</th><th>Date</th><th>Actions</th></tr></thead>
   <tbody>
   {% for m in messages %}
     <tr>
@@ -15,9 +16,14 @@
       <td>{{ m.from }}</td>
       <td><a href="/message/{{ m.id }}">{{ m.subject }}</a></td>
       <td>{{ m.date }}</td>
+      <td>
+        <form method="post" action="/message/{{ m.id }}/kill" style="display:inline;" onsubmit="return confirm('Kill this message?');">
+          <button type="submit">Kill</button>
+        </form>
+      </td>
     </tr>
   {% else %}
-    <tr><td colspan="4">No messages found.</td></tr>
+    <tr><td colspan="5">No messages found.</td></tr>
   {% endfor %}
   </tbody>
 </table>
