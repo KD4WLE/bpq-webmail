@@ -19,19 +19,21 @@
       </div>
 
       <nav class="side-nav">
+        {% if user %}
+          <a href="/dashboard">🏠 Dashboard</a>
+        {% endif %}
         <a href="/mheard">📡 MHeard</a>
         <a href="/node">🖥️ Node Status</a>
         <a href="/nodes">🌐 Nodes</a>
         <a href="/connections">🔗 Connections</a>
         {% if user %}
-          <a href="/dashboard">🏠 Dashboard</a>
           <a href="/">📥 Inbox</a>
           <a href="/bulletins">📢 Bulletins</a>
           <a href="/compose">✍️ Compose</a>
           <a href="/notifications">🔔 Notifications{% set nav_notification_count = unread_notification_count(user.id) %}{% if nav_notification_count %} ({{ nav_notification_count }}){% endif %}</a>
           <a href="/watchlists">⭐ Watch Lists</a>
           <a href="/profile">⚙️ Profile</a>
-          {% if user.is_admin %}
+          {% if user["is_admin"] %}
             <a href="/admin/users">👥 Admin Users</a>
             <a href="/admin/password-resets">🔐 Password Resets</a>
           {% endif %}
