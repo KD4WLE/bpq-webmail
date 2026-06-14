@@ -85,10 +85,24 @@ cd bpq-webmail
 
 The install script will:
 
+- Check for required Python/venv packages
+- Offer to install Ubuntu/Debian prerequisites with `apt-get`
 - Create `.venv`
 - Install Python requirements
 - Copy `.env.example` to `.env` if `.env` is missing
 - Initialize the SQLite schema
+
+On a fresh Ubuntu/Debian VM, you can explicitly allow package installation:
+
+```bash
+./install.sh --install-deps
+```
+
+For unattended installs:
+
+```bash
+./install.sh --install-deps --yes
+```
 
 Edit `.env`:
 
@@ -175,6 +189,13 @@ Install or update a systemd service:
 
 ```bash
 sudo ./install.sh --systemd
+```
+
+On a fresh Ubuntu/Debian server, combine dependency installation and systemd
+setup:
+
+```bash
+sudo ./install.sh --install-deps --systemd
 ```
 
 The default systemd service name is `bpq-webmail`. To use another name:
