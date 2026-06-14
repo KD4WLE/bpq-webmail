@@ -1,7 +1,4 @@
-from dotenv import load_dotenv
-load_dotenv()
 from fastapi.staticfiles import StaticFiles
-import os
 import sqlite3
 import telnetlib
 import time
@@ -22,46 +19,43 @@ from fastapi.templating import Jinja2Templates
 from passlib.context import CryptContext
 from itsdangerous import URLSafeSerializer, BadSignature
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "bpq_webmail.db"
+import config
 
-def env(name: str, default_value: str) -> str:
-    return os.environ.get(name, default_value)
-
-BPQ_POP3_HOST = env("BPQ_POP3_HOST", "127.0.0.1")
-BPQ_POP3_PORT = int(env("BPQ_POP3_PORT", "110"))
-BPQ_SMTP_HOST = env("BPQ_SMTP_HOST", "127.0.0.1")
-BPQ_SMTP_PORT = int(env("BPQ_SMTP_PORT", "25"))
-PORTAL_TAGLINE = env("PORTAL_TAGLINE", "Sent via the BPQ Web Portal")
-SESSION_SECRET = env("SESSION_SECRET", "dev-change-me")
-APP_ADMIN_USERNAME = env("APP_ADMIN_USERNAME", "admin")
-from dotenv import load_dotenv
-load_dotenv()
-APP_ADMIN_PASSWORD = env("APP_ADMIN_PASSWORD", "change-me-now")
-APP_VERSION = "v0.54"
+BASE_DIR = config.BASE_DIR
+DB_PATH = config.DB_PATH
+BPQ_POP3_HOST = config.BPQ_POP3_HOST
+BPQ_POP3_PORT = config.BPQ_POP3_PORT
+BPQ_TELNET_HOST = config.BPQ_TELNET_HOST
+BPQ_TELNET_PORT = config.BPQ_TELNET_PORT
+BPQ_SMTP_HOST = config.BPQ_SMTP_HOST
+BPQ_SMTP_PORT = config.BPQ_SMTP_PORT
+PORTAL_TAGLINE = config.PORTAL_TAGLINE
+SESSION_SECRET = config.SESSION_SECRET
+APP_VERSION = config.APP_VERSION
+NODE_PROMPT_PREFIX = f"{config.NODE_CALLSIGN.upper()}:" if config.NODE_CALLSIGN else ""
 
 COMPOSE_MODES = {
     "private": {
         "label": "Private Message",
-        "command": env("BPQ_COMPOSE_PRIVATE_COMMAND", "sp"),
+        "command": config.COMPOSE_PRIVATE_COMMAND,
         "recipient_label": "To",
         "recipient_placeholder": "CALLSIGN or address",
     },
     "bulletin": {
         "label": "Bulletin",
-        "command": env("BPQ_COMPOSE_BULLETIN_COMMAND", "sb"),
+        "command": config.COMPOSE_BULLETIN_COMMAND,
         "recipient_label": "Bulletin Category / Area",
         "recipient_placeholder": "CATEGORY or @AREA",
     },
     "nts": {
         "label": "NTS",
-        "command": env("BPQ_COMPOSE_NTS_COMMAND", "st"),
+        "command": config.COMPOSE_NTS_COMMAND,
         "recipient_label": "NTS Destination",
         "recipient_placeholder": "NTS destination",
     },
     "winlink": {
         "label": "Winlink",
-        "command": env("BPQ_COMPOSE_WINLINK_COMMAND", "sp"),
+        "command": config.COMPOSE_WINLINK_COMMAND,
         "recipient_label": "Winlink Address",
         "recipient_placeholder": "CALLSIGN or user@example.org",
     },
@@ -80,6 +74,10 @@ def log_elapsed(label, start):
         pass
 
 
+def is_node_prompt_line(line: str) -> bool:
+    return bool(NODE_PROMPT_PREFIX and line.strip().upper().startswith(NODE_PROMPT_PREFIX))
+
+
 def bpq_command(user, commands, timeout=10, settle=0.5):
     """Run one or more BPQ telnet commands and return combined output."""
     start = time.time()
@@ -87,7 +85,7 @@ def bpq_command(user, commands, timeout=10, settle=0.5):
     if isinstance(commands, str):
         commands = [commands]
 
-    tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=timeout)
+    tn = telnetlib.Telnet(BPQ_TELNET_HOST, BPQ_TELNET_PORT, timeout=timeout)
     try:
         time.sleep(settle)
         output += tn.read_very_eager().decode(errors="ignore")
@@ -129,18 +127,68 @@ def ttl_cache_set(key, value):
     _CACHE[key] = (time.time(), value)
     return value
 
-app = FastAPI(title="BPQ Webmail")
+app = FastAPI(title=config.SITE_TITLE)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 templates.env.globals["app_version"] = APP_VERSION
+templates.env.globals["site_name"] = config.SITE_NAME
+templates.env.globals["site_title"] = config.SITE_TITLE
+templates.env.globals["site_subtitle"] = config.SITE_SUBTITLE
+templates.env.globals["site_footer_text"] = config.SITE_FOOTER_TEXT
+templates.env.globals["brand_subtitle"] = config.BRAND_SUBTITLE
+templates.env.globals["brand_logo_path"] = config.BRAND_LOGO_PATH
+templates.env.globals["brand_logo_alt"] = config.BRAND_LOGO_ALT
+templates.env.globals["contact_form_url"] = config.CONTACT_FORM_URL
+templates.env.globals["contact_form_label"] = config.CONTACT_FORM_LABEL
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 signer = URLSafeSerializer(SESSION_SECRET, salt="bpq-webmail-session")
 
 
 def db() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def admin_exists() -> bool:
+    if not DB_PATH.exists():
+        return False
+    with db() as conn:
+        row = conn.execute("SELECT count(*) FROM users WHERE is_admin = 1").fetchone()
+        return bool(row and row[0])
+
+
+def is_safe_setup_password(username: str, password: str) -> bool:
+    password = password or ""
+    weak_values = {
+        "",
+        "admin",
+        "password",
+        "changeme",
+        "change-me",
+        "change-me-now",
+        "dev-change-me",
+        username.lower(),
+    }
+    return len(password) >= 10 and password.lower() not in weak_values
+
+
+def should_auto_create_admin() -> bool:
+    if not config.AUTO_CREATE_ADMIN:
+        return False
+    return all(
+        (
+            config.APP_ADMIN_USERNAME,
+            is_safe_setup_password(config.APP_ADMIN_USERNAME, config.APP_ADMIN_PASSWORD),
+            config.APP_ADMIN_BPQ_USER,
+            config.APP_ADMIN_BPQ_PASSWORD,
+        )
+    )
+
+
+def setup_token_valid(token: str) -> bool:
+    return not config.FIRST_RUN_SETUP_TOKEN or token == config.FIRST_RUN_SETUP_TOKEN
 
 
 def init_db() -> None:
@@ -221,8 +269,8 @@ def init_db() -> None:
             )
             """
         )
-        row = conn.execute("SELECT id FROM users WHERE username = ?", (APP_ADMIN_USERNAME,)).fetchone()
-        if row is None:
+        admin_count = conn.execute("SELECT count(*) FROM users WHERE is_admin = 1").fetchone()[0]
+        if admin_count == 0 and should_auto_create_admin():
             conn.execute(
                 """
                 INSERT INTO users
@@ -230,11 +278,11 @@ def init_db() -> None:
                 VALUES (?, ?, ?, ?, ?, 1, 1)
                 """,
                 (
-                    APP_ADMIN_USERNAME,
-                    pwd_context.hash(APP_ADMIN_PASSWORD),
-                    "ADMIN",
-                    "ADMIN",
-                    "unused",
+                    config.APP_ADMIN_USERNAME,
+                    pwd_context.hash(config.APP_ADMIN_PASSWORD),
+                    config.APP_ADMIN_CALLSIGN,
+                    config.APP_ADMIN_BPQ_USER,
+                    config.APP_ADMIN_BPQ_PASSWORD,
                 ),
             )
 
@@ -328,12 +376,98 @@ def pop3_client(user: sqlite3.Row) -> poplib.POP3:
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     user = get_session_user(request)
-    return templates.TemplateResponse("home.html", {"request": request, "user": user})
+    return templates.TemplateResponse(
+        "home.html",
+        {"request": request, "user": user, "setup_needed": not admin_exists()},
+    )
 
 
 @app.get("/login", response_class=HTMLResponse)
 def login_form(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "error": None, "setup_needed": not admin_exists()},
+    )
+
+
+@app.get("/setup", response_class=HTMLResponse)
+def first_run_setup_form(request: Request, token: str = Query("")):
+    if not config.FIRST_RUN_SETUP_ENABLED or admin_exists():
+        raise HTTPException(status_code=404, detail="Setup is not available.")
+    if not setup_token_valid(token):
+        raise HTTPException(status_code=403, detail="Invalid setup token.")
+
+    return templates.TemplateResponse(
+        "setup.html",
+        {
+            "request": request,
+            "user": None,
+            "error": None,
+            "token": token,
+        },
+    )
+
+
+@app.post("/setup", response_class=HTMLResponse)
+def first_run_setup_create(
+    request: Request,
+    token: str = Form(""),
+    username: str = Form(...),
+    password: str = Form(...),
+    callsign: str = Form(...),
+    bpq_user: str = Form(...),
+    bpq_password: str = Form(...),
+):
+    if not config.FIRST_RUN_SETUP_ENABLED or admin_exists():
+        raise HTTPException(status_code=404, detail="Setup is not available.")
+    if not setup_token_valid(token):
+        raise HTTPException(status_code=403, detail="Invalid setup token.")
+
+    username = username.strip()
+    callsign = callsign.strip().upper()
+    bpq_user = bpq_user.strip()
+
+    if not username or not callsign or not bpq_user or not bpq_password:
+        return templates.TemplateResponse(
+            "setup.html",
+            {
+                "request": request,
+                "user": None,
+                "error": "All fields are required.",
+                "token": token,
+            },
+        )
+
+    if not is_safe_setup_password(username, password):
+        return templates.TemplateResponse(
+            "setup.html",
+            {
+                "request": request,
+                "user": None,
+                "error": "Use a unique admin password with at least 10 characters.",
+                "token": token,
+            },
+        )
+
+    with db() as conn:
+        if conn.execute("SELECT count(*) FROM users WHERE is_admin = 1").fetchone()[0]:
+            raise HTTPException(status_code=404, detail="Setup is not available.")
+        conn.execute(
+            """
+            INSERT INTO users
+            (username, password_hash, callsign, bpq_user, bpq_password, approved, is_admin)
+            VALUES (?, ?, ?, ?, ?, 1, 1)
+            """,
+            (
+                username,
+                pwd_context.hash(password),
+                callsign,
+                bpq_user,
+                bpq_password,
+            ),
+        )
+
+    return RedirectResponse("/login", status_code=303)
 
 
 @app.post("/login")
@@ -387,7 +521,6 @@ def forgot_password_request(
             (username, callsign, message),
         )
         conn.commit()
-    mark_notifications_read_for_messages(user_id, clean_ids)
 
     return templates.TemplateResponse(
         "forgot_password.html",
@@ -521,7 +654,7 @@ def compose_send(
         )
 
     try:
-        tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=15)
+        tn = telnetlib.Telnet(BPQ_TELNET_HOST, BPQ_TELNET_PORT, timeout=15)
 
         tn.read_until(b"Username:", timeout=10)
         tn.write((user["bpq_user"] + "\r").encode())
@@ -742,7 +875,7 @@ def parse_bulletin_line(line: str) -> Optional[dict]:
 
 
 def fetch_bulletin_list(user) -> tuple[list[dict], str, list[str]]:
-    tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
+    tn = telnetlib.Telnet(BPQ_TELNET_HOST, BPQ_TELNET_PORT, timeout=10)
     try:
         tn.read_until(b"Username:", timeout=10)
         tn.write((user["bpq_user"] + "\r").encode())
@@ -784,7 +917,7 @@ def read_bulletin_body(user, msg_id: int) -> str:
     responses = []
 
     for command in (f"r {msg_id}", f"read {msg_id}"):
-        tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
+        tn = telnetlib.Telnet(BPQ_TELNET_HOST, BPQ_TELNET_PORT, timeout=10)
         try:
             tn.read_until(b"Username:", timeout=10)
             tn.write((user["bpq_user"] + "\r").encode())
@@ -820,7 +953,7 @@ def read_bulletin_body(user, msg_id: int) -> str:
 
 def refresh_mheard_cache(user, ports: dict[str, str]) -> None:
     heard = []
-    tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
+    tn = telnetlib.Telnet(BPQ_TELNET_HOST, BPQ_TELNET_PORT, timeout=10)
     try:
         tn.read_until(b"Username:", timeout=10)
         tn.write((user["bpq_user"] + "\r").encode())
@@ -869,7 +1002,7 @@ def refresh_connections_cache(user) -> None:
         if not line:
             continue
 
-        if line.startswith("TITUS1:") or "G8BPQ Network System" in line:
+        if is_node_prompt_line(line) or "G8BPQ Network System" in line:
             continue
 
         if line.startswith("TNC Uplink"):
@@ -896,7 +1029,7 @@ def refresh_node_status_cache(user) -> None:
     raw_ports = ""
     raw_users = ""
 
-    tn = telnetlib.Telnet(BPQ_POP3_HOST, 8010, timeout=10)
+    tn = telnetlib.Telnet(BPQ_TELNET_HOST, BPQ_TELNET_PORT, timeout=10)
     try:
         tn.read_until(b"Username:", timeout=10)
         tn.write((user["bpq_user"] + "\r").encode())
@@ -928,7 +1061,7 @@ def refresh_node_status_cache(user) -> None:
         if "G8BPQ Network System" in clean:
             version_line = clean
 
-        if clean.startswith("TITUS1:"):
+        if is_node_prompt_line(clean):
             continue
 
         if " Port " in clean and clean[0:2].strip().isdigit():
@@ -966,7 +1099,7 @@ def refresh_nodes_cache(user) -> None:
             in_nodes_section = True
             continue
 
-        if not in_nodes_section or clean.startswith("TITUS1:"):
+        if not in_nodes_section or is_node_prompt_line(clean):
             continue
 
         for token in clean.split():

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>First Admin Setup</h1>
+  <p class="muted">Create the first administrator for this BPQ Portal install.</p>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+  <form method="post" action="/setup">
+    <input type="hidden" name="token" value="{{ token }}">
+
+    <label>Admin Username</label>
+    <input name="username" autocomplete="username" required>
+
+    <label>Admin Password</label>
+    <input name="password" type="password" autocomplete="new-password" required>
+
+    <label>Callsign</label>
+    <input name="callsign" required>
+
+    <label>BPQ Username</label>
+    <input name="bpq_user" required>
+
+    <label>BPQ Password</label>
+    <input name="bpq_password" type="password" required>
+
+    <button type="submit">Create Admin</button>
+  </form>
+</div>
+{% endblock %}

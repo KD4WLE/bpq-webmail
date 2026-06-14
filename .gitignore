@@ -1,8 +1,11 @@
 *.bak.*
 *.backup
 *.broken-cache.*
+.env
 __pycache__/
 *.pyc
 .venv/
+.sandbox-venv/
+.preview-venv/
 bpq_webmail.db
 bpq_webmail.db.*.bak

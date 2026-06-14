@@ -13,8 +13,15 @@
   <p>
     <a href="/forgot-password">Forgot Password?</a>
   </p>
+  {% if contact_form_url %}
   <p>
-    <a class="button" href="https://kd4wle.net/contact-form">Contact Sysop / Request Account</a>
+    <a class="button" href="{{ contact_form_url }}">{{ contact_form_label }}</a>
   </p>
+  {% endif %}
+  {% if setup_needed %}
+  <p>
+    <a class="button" href="/setup">First Admin Setup</a>
+  </p>
+  {% endif %}
 </div>
 {% endblock %}

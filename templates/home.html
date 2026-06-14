@@ -8,6 +8,9 @@
   {% else %}
     <p>Log in to access your LinBPQ mailbox.</p>
     <p><a class="button" href="/login">Login</a></p>
+    {% if setup_needed %}
+      <p><a class="button" href="/setup">First Admin Setup</a></p>
+    {% endif %}
   {% endif %}
 </div>
 {% endblock %}

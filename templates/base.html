@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>KD4WLE BPQ Portal</title>
+  <title>{{ site_title }}</title>
   <link rel="stylesheet" href="/static/css/kd4wle.css">
 </head>
 
@@ -13,8 +13,8 @@
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-center">
-          <img src="/static/img/logo.png" alt="KD4WLE" class="brand-logo">
-          <div class="brand-subtitle">BPQ Portal</div>
+          <img src="{{ brand_logo_path }}" alt="{{ brand_logo_alt }}" class="brand-logo">
+          <div class="brand-subtitle">{{ brand_subtitle }}</div>
         </div>
       </div>
 
@@ -44,17 +44,17 @@
       </nav>
 
       <div class="sidebar-footer">
-        KD4WLE BPQ Portal<br>
+        {{ site_name }}<br>
         <strong>{{ app_version }}</strong><br>
-        Packet Radio Messaging
+        {{ site_footer_text }}
       </div>
     </aside>
 
     <main class="main-panel">
       <header class="topbar">
         <div>
-          <h1>KD4WLE BPQ Portal</h1>
-          <p>Packet Radio Messaging Interface</p>
+          <h1>{{ site_name }}</h1>
+          <p>{{ site_subtitle }}</p>
         </div>
       </header>
 
