@@ -160,7 +160,7 @@ After=network.target
 Type=simple
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=${APP_DIR}/.env
-ExecStart=${VENV_DIR}/bin/uvicorn app:app --host ${WEB_BIND_HOST} --port ${WEB_BIND_PORT}
+ExecStart=${VENV_DIR}/bin/python -m uvicorn app:app --host ${WEB_BIND_HOST} --port ${WEB_BIND_PORT}
 Restart=always
 RestartSec=5
 

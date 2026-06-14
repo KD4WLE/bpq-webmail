@@ -208,7 +208,7 @@ The generated service uses:
 
 - `EnvironmentFile=<repo>/.env`
 - `WorkingDirectory=<repo>`
-- `ExecStart=<repo>/.venv/bin/uvicorn app:app --host WEB_BIND_HOST --port WEB_BIND_PORT`
+- `ExecStart=<repo>/.venv/bin/python -m uvicorn app:app --host WEB_BIND_HOST --port WEB_BIND_PORT`
 
 ## Deploying A Second BPQ System
 
