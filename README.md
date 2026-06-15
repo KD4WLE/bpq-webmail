@@ -90,6 +90,7 @@ The install script will:
 - Create `.venv`
 - Install Python requirements
 - Copy `.env.example` to `.env` if `.env` is missing
+- Sync `APP_VERSION` from `.env.example` into `.env`
 - Initialize the SQLite schema
 
 On a fresh Ubuntu/Debian VM, you can explicitly allow package installation:
@@ -286,7 +287,9 @@ sudo systemctl restart bpq-webmail
 ```
 
 `.env` is intentionally ignored by git. Existing production values should stay
-in place during pulls and deploys.
+in place during pulls and deploys. The installer updates only the non-secret
+`APP_VERSION` value from `.env.example` so the footer version follows releases
+without overwriting site-specific settings.
 
 After upgrading to the portable config version, review `.env.example` and add
 any missing values you want to override. Existing installs keep compatible

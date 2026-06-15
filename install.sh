@@ -121,6 +121,28 @@ install_python_requirements() {
   "${VENV_DIR}/bin/python" -m pip install -r requirements.txt
 }
 
+sync_app_version() {
+  local example_version
+  example_version="$(sed -n 's/^APP_VERSION=//p' .env.example | tail -n 1)"
+
+  if [ -z "$example_version" ]; then
+    return
+  fi
+
+  if grep -q '^APP_VERSION=' .env; then
+    local current_version
+    current_version="$(sed -n 's/^APP_VERSION=//p' .env | tail -n 1)"
+    if [ "$current_version" != "$example_version" ]; then
+      sed -i.bak "s/^APP_VERSION=.*/APP_VERSION=${example_version}/" .env
+      rm -f .env.bak
+      echo "Updated APP_VERSION in .env: ${current_version} -> ${example_version}"
+    fi
+  else
+    printf '\nAPP_VERSION=%s\n' "$example_version" >> .env
+    echo "Added APP_VERSION=${example_version} to .env"
+  fi
+}
+
 check_python_deps
 create_venv
 
@@ -135,6 +157,8 @@ if [ ! -f ".env" ]; then
   cp .env.example .env
   echo "Created .env from .env.example. Edit it before production use."
 fi
+
+sync_app_version
 
 "${VENV_DIR}/bin/python" - <<'PY'
 from app import init_db
