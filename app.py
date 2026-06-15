@@ -2186,6 +2186,21 @@ def admin_toggle_admin(request: Request, user_id: int):
     if admin["id"] == user_id:
         return RedirectResponse("/admin/users", status_code=303)
 
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.row_factory = sqlite3.Row
+    try:
+        user = conn.execute("select is_admin from users where id=?", (user_id,)).fetchone()
+        if user:
+            conn.execute(
+                "update users set is_admin=? where id=?",
+                (0 if user["is_admin"] else 1, user_id),
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+    return RedirectResponse("/admin/users", status_code=303)
+
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     user = conn.execute("select is_admin from users where id=?", (user_id,)).fetchone()
