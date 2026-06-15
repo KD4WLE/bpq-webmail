@@ -275,6 +275,16 @@ Then finish the update:
 sudo systemctl restart bpq-webmail
 ```
 
+If Python packaging inside `.venv` becomes corrupted, remove the virtual
+environment and rerun the installer. This does not remove `.env` or the SQLite
+database:
+
+```bash
+rm -rf .venv
+./install.sh --install-deps
+sudo systemctl restart bpq-webmail
+```
+
 `.env` is intentionally ignored by git. Existing production values should stay
 in place during pulls and deploys.
 

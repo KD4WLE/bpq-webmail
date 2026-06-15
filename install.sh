@@ -116,11 +116,20 @@ create_venv() {
   fi
 }
 
+install_python_requirements() {
+  "${VENV_DIR}/bin/python" -m pip install --upgrade pip
+  "${VENV_DIR}/bin/python" -m pip install -r requirements.txt
+}
+
 check_python_deps
 create_venv
 
-"${VENV_DIR}/bin/python" -m pip install --upgrade pip
-"${VENV_DIR}/bin/python" -m pip install -r requirements.txt
+if ! install_python_requirements; then
+  echo "Python dependency installation failed; recreating .venv and retrying once." >&2
+  rm -rf "$VENV_DIR"
+  create_venv
+  install_python_requirements
+fi
 
 if [ ! -f ".env" ]; then
   cp .env.example .env
@@ -175,4 +184,4 @@ EOF
 fi
 
 echo "Install complete."
-echo "Edit .env, then run: ${VENV_DIR}/bin/uvicorn app:app --host \$(grep '^WEB_BIND_HOST=' .env | cut -d= -f2) --port \$(grep '^WEB_BIND_PORT=' .env | cut -d= -f2)"
+echo "Edit .env, then run: ${VENV_DIR}/bin/python -m uvicorn app:app --host \$(grep '^WEB_BIND_HOST=' .env | cut -d= -f2) --port \$(grep '^WEB_BIND_PORT=' .env | cut -d= -f2)"
