@@ -78,6 +78,40 @@ def is_node_prompt_line(line: str) -> bool:
     return bool(NODE_PROMPT_PREFIX and line.strip().upper().startswith(NODE_PROMPT_PREFIX))
 
 
+BPQ_CONTINUE_PROMPT_RE = _re.compile(
+    r"(<\s*cr\s*>\s*to\s*cont(?:inue)?|press\s+(?:return|enter)|more\?|--\s*more\s*--)",
+    _re.IGNORECASE,
+)
+
+
+def read_bpq_paged_output(tn, initial_wait=1.0, idle_wait=0.35, max_wait=30.0) -> str:
+    output = ""
+    deadline = time.time() + max_wait
+    last_data_at = time.time()
+    handled_prompt_end = 0
+    time.sleep(initial_wait)
+
+    while time.time() < deadline:
+        chunk = tn.read_very_eager().decode(errors="ignore")
+        if chunk:
+            output += chunk
+            last_data_at = time.time()
+            tail_start = max(0, len(output) - 300)
+            prompt = BPQ_CONTINUE_PROMPT_RE.search(output[tail_start:])
+            prompt_end = tail_start + prompt.end() if prompt else 0
+            if prompt and prompt_end > handled_prompt_end:
+                handled_prompt_end = prompt_end
+                tn.write(b"\r")
+                time.sleep(idle_wait)
+                continue
+        elif time.time() - last_data_at >= idle_wait:
+            break
+
+        time.sleep(idle_wait)
+
+    return BPQ_CONTINUE_PROMPT_RE.sub("", output)
+
+
 def bpq_command(user, commands, timeout=10, settle=0.5):
     """Run one or more BPQ telnet commands and return combined output."""
     start = time.time()
@@ -933,8 +967,7 @@ def read_bulletin_body(user, msg_id: int) -> str:
             tn.read_very_eager()
 
             tn.write((command + "\r").encode())
-            time.sleep(4)
-            response = tn.read_very_eager().decode(errors="ignore")
+            response = read_bpq_paged_output(tn, initial_wait=1.0, max_wait=45.0)
             responses.append(f"$ {command}\n{response}".strip())
 
             tn.write(b"bye\r")
