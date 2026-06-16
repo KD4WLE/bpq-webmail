@@ -508,7 +508,13 @@ def first_run_setup_create(
 def login(request: Request, username: str = Form(...), password: str = Form(...)):
     with db() as conn:
         user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-    if not user or not pwd_context.verify(password, user["password_hash"]):
+    password_ok = False
+    if user:
+        try:
+            password_ok = pwd_context.verify(password, user["password_hash"])
+        except Exception as exc:
+            print(f"Password verification failed for {username}: {exc}")
+    if not user or not password_ok:
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid username or password."})
     if not user["approved"]:
         return templates.TemplateResponse("login.html", {"request": request, "error": "Account is waiting for approval."})
