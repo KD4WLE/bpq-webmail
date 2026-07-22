@@ -1498,7 +1498,14 @@ def bulletin_preference_options() -> tuple[list[str], list[str], list[str]]:
     return categories, areas, senders
 
 @app.get("/bulletins")
-def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query(0), category: str = Query(""), q: str = Query("")):
+def bulletins(
+    request: Request,
+    page: int = Query(1, ge=1),
+    refresh: int = Query(0),
+    category: str = Query(""),
+    q: str = Query(""),
+    unread: int = Query(0),
+):
     user = require_user(request)
     messages = []
     error = None
@@ -1548,6 +1555,10 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
     message_ids = [str(m["id"]) for m in messages]
     read_ids = get_read_message_ids(user["id"], message_ids)
     unread_count = sum(1 for message_id in message_ids if message_id not in read_ids)
+    unread_only = unread == 1
+
+    if unread_only:
+        messages = [m for m in messages if str(m["id"]) not in read_ids]
 
     total_messages = len(messages)
     total_pages = max(1, (total_messages + per_page - 1) // per_page)
@@ -1578,6 +1589,7 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
             "cache_age": int(time.time() - LB_CACHE["timestamp"]) if LB_CACHE["timestamp"] else None,
             "category": category,
             "q": q,
+            "unread_only": unread_only,
             "categories": categories,
             "areas": areas,
             "senders": senders,
@@ -1593,6 +1605,7 @@ def mark_visible_bulletins_read(
     page: int = Form(default=1),
     category: str = Form(default=""),
     q: str = Form(default=""),
+    unread: int = Form(default=0),
 ):
     user = require_user(request)
     mark_messages_read(user["id"], message_ids)
@@ -1603,6 +1616,8 @@ def mark_visible_bulletins_read(
         params["category"] = category.strip()
     if q.strip():
         params["q"] = q.strip()
+    if unread == 1:
+        params["unread"] = 1
 
     return RedirectResponse("/bulletins?" + urlencode(params), status_code=303)
 

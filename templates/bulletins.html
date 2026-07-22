@@ -7,6 +7,7 @@
   Showing {{ messages|length }} of {{ total_messages }} bulletins.
   Page {{ page }} of {{ total_pages }}.
   {{ unread_count }} unread.
+  {% if unread_only %}Unread only.{% endif %}
 </p>
 
 <div class="cache-notice">
@@ -27,10 +28,18 @@
     {% endfor %}
   </select>
 
+  {% if unread_only %}
+    <input type="hidden" name="unread" value="1">
+  {% endif %}
   <button type="submit">Apply</button>
   <button type="submit" name="refresh" value="1">Refresh</button>
   {% if q %}
-    <a class="button" href="/bulletins{% if category %}?category={{ category|urlencode }}{% endif %}">Clear Search</a>
+    <a class="button" href="/bulletins{% if category or unread_only %}?{% if category %}category={{ category|urlencode }}{% endif %}{% if category and unread_only %}&{% endif %}{% if unread_only %}unread=1{% endif %}{% endif %}">Clear Search</a>
+  {% endif %}
+  {% if unread_only %}
+    <a class="button" href="/bulletins{% if category or q %}?{% if category %}category={{ category|urlencode }}{% endif %}{% if category and q %}&{% endif %}{% if q %}q={{ q|urlencode }}{% endif %}{% endif %}">Show All</a>
+  {% else %}
+    <a class="button" href="/bulletins?unread=1{% if category %}&category={{ category|urlencode }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">Show Unread Only</a>
   {% endif %}
   <a class="button" href="/bulletins">Clear</a>
   <a class="button" href="/bulletins/preferences">Filters</a>
@@ -42,6 +51,7 @@
     <input type="hidden" name="page" value="{{ page }}">
     <input type="hidden" name="category" value="{{ category }}">
     <input type="hidden" name="q" value="{{ q }}">
+    <input type="hidden" name="unread" value="{{ 1 if unread_only else 0 }}">
     {% for m in messages %}
       <input type="hidden" name="message_ids" value="{{ m.id }}">
     {% endfor %}
@@ -65,11 +75,11 @@
 
 <div class="pager">
   {% if has_prev %}
-    <a class="button" href="/bulletins?page={{ prev_page }}{% if category %}&category={{ category|urlencode }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">← Previous</a>
+    <a class="button" href="/bulletins?page={{ prev_page }}{% if category %}&category={{ category|urlencode }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}{% if unread_only %}&unread=1{% endif %}">← Previous</a>
   {% endif %}
 
   {% if has_next %}
-    <a class="button" href="/bulletins?page={{ next_page }}{% if category %}&category={{ category|urlencode }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">Next →</a>
+    <a class="button" href="/bulletins?page={{ next_page }}{% if category %}&category={{ category|urlencode }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}{% if unread_only %}&unread=1{% endif %}">Next →</a>
   {% endif %}
 </div>
 
