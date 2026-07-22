@@ -1290,7 +1290,6 @@ def notification_body(message: dict, watch) -> str:
 
 def sync_notifications_for_user(user_id: int) -> None:
     messages = LB_CACHE["messages"] if "LB_CACHE" in globals() else []
-    total_cached_messages = len(messages)
     watches = get_watch_lists(user_id)
     if not messages or not watches:
         return
@@ -1478,6 +1477,7 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
             (user["id"],),
         ).fetchone()
 
+    total_cached_messages = len(messages)
     messages, per_page = apply_bulletin_preferences(messages, prefs)
 
     category = category.strip().upper()
