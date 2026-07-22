@@ -1232,6 +1232,10 @@ def mark_messages_read(user_id: int, message_ids: list[str]) -> None:
         conn.commit()
 
 
+def clear_bulletin_response_cache() -> None:
+    _CACHE.pop("bulletins", None)
+
+
 WATCH_FIELDS = {
     "sender": "from",
     "area": "area",
@@ -1286,6 +1290,7 @@ def notification_body(message: dict, watch) -> str:
 
 def sync_notifications_for_user(user_id: int) -> None:
     messages = LB_CACHE["messages"] if "LB_CACHE" in globals() else []
+    total_cached_messages = len(messages)
     watches = get_watch_lists(user_id)
     if not messages or not watches:
         return
@@ -1515,6 +1520,7 @@ def bulletins(request: Request, page: int = Query(1, ge=1), refresh: int = Query
             "page": page,
             "total_pages": total_pages,
             "total_messages": total_messages,
+            "total_cached_messages": total_cached_messages,
             "unread_count": unread_count,
             "has_prev": page > 1,
             "has_next": page < total_pages,
@@ -1541,6 +1547,7 @@ def mark_visible_bulletins_read(
 ):
     user = require_user(request)
     mark_messages_read(user["id"], message_ids)
+    clear_bulletin_response_cache()
 
     params = {"page": page}
     if category.strip():
@@ -1549,6 +1556,16 @@ def mark_visible_bulletins_read(
         params["q"] = q.strip()
 
     return RedirectResponse("/bulletins?" + urlencode(params), status_code=303)
+
+
+@app.post("/bulletins/mark-all-read")
+def mark_all_bulletins_read(request: Request):
+    user = require_user(request)
+    messages = LB_CACHE.get("messages") or []
+    message_ids = [str(m["id"]) for m in messages if m.get("id") is not None]
+    mark_messages_read(user["id"], message_ids)
+    clear_bulletin_response_cache()
+    return RedirectResponse("/bulletins", status_code=303)
 
 
 @app.get("/watchlists")

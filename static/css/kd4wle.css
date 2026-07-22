@@ -97,7 +97,6 @@ a:hover {
 .side-nav a {
   align-items: center;
   display: flex;
-  gap: 10px;
   min-height: 42px;
   padding: 10px 12px;
   border-radius: 10px;
@@ -107,9 +106,30 @@ a:hover {
 }
 
 .side-nav a i {
-  color: var(--accent);
+  color: var(--accent) !important;
   flex: 0 0 18px;
+  margin-right: 10px;
   text-align: center;
+}
+
+.side-nav a:nth-of-type(5n + 1) i {
+  color: #38bdf8 !important;
+}
+
+.side-nav a:nth-of-type(5n + 2) i {
+  color: #f59e0b !important;
+}
+
+.side-nav a:nth-of-type(5n + 3) i {
+  color: #22c55e !important;
+}
+
+.side-nav a:nth-of-type(5n + 4) i {
+  color: #fb7185 !important;
+}
+
+.side-nav a:nth-of-type(5n + 5) i {
+  color: #a78bfa !important;
 }
 
 .side-nav a span:not(.nav-badge) {
@@ -390,6 +410,21 @@ pre {
 
 .filter-form input[type="text"] {
   margin: 0;
+}
+
+.button-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.button-row form {
+  background: transparent;
+  border: 0;
+  margin: 0;
+  padding: 0;
 }
 
 .category-pills {

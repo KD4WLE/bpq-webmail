@@ -36,17 +36,25 @@
   <a class="button" href="/bulletins/preferences">Filters</a>
 </form>
 
-{% if messages %}
-<form method="post" action="/bulletins/mark-visible-read">
-  <input type="hidden" name="page" value="{{ page }}">
-  <input type="hidden" name="category" value="{{ category }}">
-  <input type="hidden" name="q" value="{{ q }}">
-  {% for m in messages %}
-    <input type="hidden" name="message_ids" value="{{ m.id }}">
-  {% endfor %}
-  <button type="submit">Mark all visible as read</button>
-</form>
-{% endif %}
+<div class="button-row">
+  {% if messages %}
+  <form method="post" action="/bulletins/mark-visible-read">
+    <input type="hidden" name="page" value="{{ page }}">
+    <input type="hidden" name="category" value="{{ category }}">
+    <input type="hidden" name="q" value="{{ q }}">
+    {% for m in messages %}
+      <input type="hidden" name="message_ids" value="{{ m.id }}">
+    {% endfor %}
+    <button type="submit">Mark visible as read</button>
+  </form>
+  {% endif %}
+
+  {% if total_cached_messages %}
+  <form method="post" action="/bulletins/mark-all-read" onsubmit="return confirm('Mark every cached bulletin as read, including hidden and filtered bulletins?');">
+    <button type="submit">Mark all bulletins as read</button>
+  </form>
+  {% endif %}
+</div>
 
 {% if error %}
   <div class="error">{{ error }}</div>
