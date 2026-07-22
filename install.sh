@@ -2,7 +2,6 @@
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_DIR="${APP_DIR}/.venv"
 SERVICE_NAME="${BPQ_PORTAL_SERVICE_NAME:-bpq-webmail}"
 INSTALL_SYSTEMD=false
 INSTALL_DEPS=false
@@ -29,19 +28,52 @@ done
 
 cd "$APP_DIR"
 
+find_existing_venv() {
+  if [ -n "${BPQ_PORTAL_VENV:-}" ] && [ -x "${BPQ_PORTAL_VENV}/bin/python" ]; then
+    printf '%s\n' "$BPQ_PORTAL_VENV"
+    return
+  fi
+
+  for candidate in "$APP_DIR/.venv" "$APP_DIR/venv"; do
+    if [ -x "$candidate/bin/python" ]; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+
+  local service_file="/etc/systemd/system/${SERVICE_NAME}.service"
+  if [ -r "$service_file" ]; then
+    local exec_path
+    exec_path="$(sed -n 's#^ExecStart=\([^ ]*/bin/\)\(python\|uvicorn\).*#\1#p' "$service_file" | head -n 1)"
+    if [ -n "$exec_path" ]; then
+      local detected
+      detected="$(cd "${exec_path}/../.." 2>/dev/null && pwd || true)"
+      if [ -n "$detected" ] && [ -x "$detected/bin/python" ]; then
+        printf '%s\n' "$detected"
+        return
+      fi
+    fi
+  fi
+
+  printf '%s\n' "$APP_DIR/.venv"
+}
+
+VENV_DIR="$(find_existing_venv)"
+
+echo "Using virtual environment: $VENV_DIR"
+
 apt_install_deps() {
   if ! command -v apt-get >/dev/null 2>&1; then
     echo "Automatic dependency install is only supported on apt-based systems." >&2
-    echo "Install Python 3, python3-venv, python3-pip, and build-essential, then rerun ./install.sh." >&2
     exit 1
   fi
 
   local sudo_cmd=""
   if [ "$(id -u)" -ne 0 ]; then
-    if ! command -v sudo >/dev/null 2>&1; then
+    command -v sudo >/dev/null 2>&1 || {
       echo "sudo is required to install packages as a non-root user." >&2
       exit 1
-    fi
+    }
     sudo_cmd="sudo"
   fi
 
@@ -50,122 +82,90 @@ apt_install_deps() {
 }
 
 check_python_deps() {
-  local missing=()
-
-  if ! command -v python3 >/dev/null 2>&1; then
-    missing+=("python3")
-  else
-    if ! python3 -m venv --help >/dev/null 2>&1; then
-      missing+=("python3-venv")
-    fi
-  fi
-
-  if [ "${#missing[@]}" -eq 0 ]; then
+  if command -v python3 >/dev/null 2>&1 && python3 -m venv --help >/dev/null 2>&1; then
     return
   fi
 
-  echo "Missing required Python packages: ${missing[*]}"
-  echo "On Ubuntu/Debian, install: python3 python3-venv python3-pip build-essential"
-
-  if [ "$INSTALL_DEPS" = true ]; then
-    apt_install_deps
-    return
-  fi
-
-  if [ "$ASSUME_YES" = true ]; then
+  echo "Python 3 and python3-venv are required."
+  if [ "$INSTALL_DEPS" = true ] || [ "$ASSUME_YES" = true ]; then
     apt_install_deps
     return
   fi
 
   read -r -p "Install required packages with apt-get now? [y/N] " reply
   case "$reply" in
-    y|Y|yes|YES)
-      apt_install_deps
-      ;;
-    *)
-      echo "Install dependencies, then rerun ./install.sh." >&2
-      exit 1
-      ;;
+    y|Y|yes|YES) apt_install_deps ;;
+    *) exit 1 ;;
   esac
 }
 
 create_venv() {
-  if [ -d "$VENV_DIR" ] && [ ! -x "${VENV_DIR}/bin/python" ]; then
-    echo "Existing .venv is incomplete; recreating it."
+  if [ -d "$VENV_DIR" ] && [ ! -x "$VENV_DIR/bin/python" ]; then
+    echo "Existing virtual environment is incomplete; recreating it."
     rm -rf "$VENV_DIR"
   fi
 
-  if [ ! -d "$VENV_DIR" ]; then
+  if [ ! -x "$VENV_DIR/bin/python" ]; then
     python3 -m venv "$VENV_DIR"
   fi
 
-  if [ ! -x "${VENV_DIR}/bin/python" ]; then
-    echo "Virtual environment python was not created correctly." >&2
-    echo "Install python3-venv and rerun ./install.sh." >&2
-    exit 1
-  fi
-
-  if ! "${VENV_DIR}/bin/python" -m pip --version >/dev/null 2>&1; then
-    "${VENV_DIR}/bin/python" -m ensurepip --upgrade >/dev/null 2>&1 || true
-  fi
-
-  if ! "${VENV_DIR}/bin/python" -m pip --version >/dev/null 2>&1; then
+  "$VENV_DIR/bin/python" -m ensurepip --upgrade >/dev/null 2>&1 || true
+  "$VENV_DIR/bin/python" -m pip --version >/dev/null 2>&1 || {
     echo "Virtual environment pip is missing or broken." >&2
-    echo "Install python3-venv/python3-pip and rerun ./install.sh." >&2
     exit 1
-  fi
+  }
 }
 
 install_python_requirements() {
-  "${VENV_DIR}/bin/python" -m pip install --upgrade pip
-  "${VENV_DIR}/bin/python" -m pip install -r requirements.txt
+  "$VENV_DIR/bin/python" -m pip install --upgrade pip
+  "$VENV_DIR/bin/python" -m pip install -r requirements.txt
 }
 
-sync_app_version() {
-  local example_version
-  example_version="$(sed -n 's/^APP_VERSION=//p' .env.example | tail -n 1)"
-
-  if [ -z "$example_version" ]; then
+sync_env_file() {
+  if [ ! -f .env ]; then
+    cp .env.example .env
+    echo "Created .env from .env.example."
     return
   fi
 
-  if grep -q '^APP_VERSION=' .env; then
-    local current_version
-    current_version="$(sed -n 's/^APP_VERSION=//p' .env | tail -n 1)"
-    if [ "$current_version" != "$example_version" ]; then
-      sed -i.bak "s/^APP_VERSION=.*/APP_VERSION=${example_version}/" .env
-      rm -f .env.bak
-      echo "Updated APP_VERSION in .env: ${current_version} -> ${example_version}"
+  while IFS='=' read -r key value; do
+    case "$key" in
+      ''|'#'*) continue ;;
+    esac
+    if ! grep -q "^${key}=" .env; then
+      printf '\n%s=%s\n' "$key" "$value" >> .env
+      echo "Added ${key} to .env"
     fi
-  else
-    printf '\nAPP_VERSION=%s\n' "$example_version" >> .env
-    echo "Added APP_VERSION=${example_version} to .env"
-  fi
+  done < .env.example
+}
+
+initialize_database() {
+  "$VENV_DIR/bin/python" - <<'PY'
+import analytics
+import config
+from app import init_db
+
+init_db()
+with analytics.connect(config.DB_PATH) as conn:
+    analytics.init_db(conn)
+print(f"Database initialized: {config.DB_PATH}")
+PY
 }
 
 check_python_deps
 create_venv
 
 if ! install_python_requirements; then
-  echo "Python dependency installation failed; recreating .venv and retrying once." >&2
+  echo "Dependency installation failed; recreating the virtual environment and retrying once." >&2
   rm -rf "$VENV_DIR"
   create_venv
   install_python_requirements
 fi
 
-if [ ! -f ".env" ]; then
-  cp .env.example .env
-  echo "Created .env from .env.example. Edit it before production use."
-fi
+sync_env_file
+initialize_database
 
-sync_app_version
-
-"${VENV_DIR}/bin/python" - <<'PY'
-from app import init_db
-
-init_db()
-print("Database initialized.")
-PY
+"$VENV_DIR/bin/python" -m py_compile app.py run.py analytics.py usage_analytics_integration.py config.py
 
 if [ "$INSTALL_SYSTEMD" = true ]; then
   if [ "$(id -u)" -ne 0 ]; then
@@ -173,16 +173,8 @@ if [ "$INSTALL_SYSTEMD" = true ]; then
     exit 1
   fi
 
-  WEB_BIND_HOST="$("${VENV_DIR}/bin/python" - <<'PY'
-import config
-print(config.WEB_BIND_HOST)
-PY
-)"
-  WEB_BIND_PORT="$("${VENV_DIR}/bin/python" - <<'PY'
-import config
-print(config.WEB_BIND_PORT)
-PY
-)"
+  WEB_BIND_HOST="$("$VENV_DIR/bin/python" -c 'import config; print(config.WEB_BIND_HOST)')"
+  WEB_BIND_PORT="$("$VENV_DIR/bin/python" -c 'import config; print(config.WEB_BIND_PORT)')"
 
   cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
 [Unit]
@@ -193,7 +185,7 @@ After=network.target
 Type=simple
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=${APP_DIR}/.env
-ExecStart=${VENV_DIR}/bin/python -m uvicorn app:app --host ${WEB_BIND_HOST} --port ${WEB_BIND_PORT}
+ExecStart=${VENV_DIR}/bin/python -m uvicorn run:app --host ${WEB_BIND_HOST} --port ${WEB_BIND_PORT}
 Restart=always
 RestartSec=5
 
@@ -202,10 +194,11 @@ WantedBy=multi-user.target
 EOF
 
   systemctl daemon-reload
-  systemctl enable "${SERVICE_NAME}"
-  systemctl restart "${SERVICE_NAME}"
-  systemctl status "${SERVICE_NAME}" --no-pager
+  systemctl enable "$SERVICE_NAME"
+  systemctl restart "$SERVICE_NAME"
+  systemctl status "$SERVICE_NAME" --no-pager
 fi
 
 echo "Install complete."
-echo "Edit .env, then run: ${VENV_DIR}/bin/python -m uvicorn app:app --host \$(grep '^WEB_BIND_HOST=' .env | cut -d= -f2) --port \$(grep '^WEB_BIND_PORT=' .env | cut -d= -f2)"
+echo "Run manually with:"
+echo "  ${VENV_DIR}/bin/python -m uvicorn run:app --host \$(grep '^WEB_BIND_HOST=' .env | cut -d= -f2) --port \$(grep '^WEB_BIND_PORT=' .env | cut -d= -f2)"
