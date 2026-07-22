@@ -4,28 +4,33 @@
 <h2>Dashboard</h2>
 <p class="muted">Welcome, {{ user.callsign }}.</p>
 
-<p>
-  <a class="button" href="/compose">Compose Message</a>
-  <a class="button" href="/bulletins?refresh=1">Refresh Bulletin Cache</a>
-</p>
-
 <div class="dashboard-grid">
-  <a class="dash-card" href="/inbox">
-    <div class="dash-icon">📥</div>
+  <a class="dash-card" href="/node">
+    <div class="dash-icon"><i class="fa-solid fa-heart-pulse"></i></div>
     <div>
-      <h3>New Mail</h3>
-      <p>
-        {% if new_mail_count is not none %}
-          {{ new_mail_count }} in mailbox
-        {% else %}
-          Mail count unavailable
-        {% endif %}
-      </p>
+      <h3>System Health</h3>
+      <p>{{ system_health }}</p>
+    </div>
+  </a>
+
+  <a class="dash-card" href="/connections">
+    <div class="dash-icon"><i class="fa-solid fa-users"></i></div>
+    <div>
+      <h3>Connected Users</h3>
+      <p>{% if connected_users_count is not none %}{{ connected_users_count }} active{% else %}No recent cache{% endif %}</p>
+    </div>
+  </a>
+
+  <a class="dash-card" href="/nodes">
+    <div class="dash-icon"><i class="fa-solid fa-network-wired"></i></div>
+    <div>
+      <h3>Connected Nodes</h3>
+      <p>{% if node_count is not none %}{{ node_count }} cached{% else %}No cached node list{% endif %}</p>
     </div>
   </a>
 
   <a class="dash-card" href="/bulletins">
-    <div class="dash-icon">🆕</div>
+    <div class="dash-icon"><i class="fa-solid fa-bullhorn"></i></div>
     <div>
       <h3>Unread Bulletins</h3>
       <p>{{ unread_count }} unread / {{ bulletin_count }} cached</p>
@@ -33,52 +38,18 @@
   </a>
 
   <a class="dash-card" href="/watchlists">
-    <div class="dash-icon">⭐</div>
+    <div class="dash-icon"><i class="fa-solid fa-star"></i></div>
     <div>
-      <h3>Watched Bulletins</h3>
+      <h3>Watchlist Hits</h3>
       <p>{{ watched_unread_count }} unread watched</p>
     </div>
   </a>
 
   <a class="dash-card" href="/notifications">
-    <div class="dash-icon">🔔</div>
+    <div class="dash-icon"><i class="fa-solid fa-bell"></i></div>
     <div>
       <h3>Notifications</h3>
       <p>{{ notification_count }} unread notifications</p>
-    </div>
-  </a>
-
-  {% if latest_bulletin %}
-  <a class="dash-card" href="/bulletin/{{ latest_bulletin.id }}">
-    <div class="dash-icon">🗓️</div>
-    <div>
-      <h3>Latest Bulletin</h3>
-      <p>{{ latest_bulletin.date }} / #{{ latest_bulletin.id }}</p>
-    </div>
-  </a>
-  {% else %}
-  <div class="dash-card">
-    <div class="dash-icon">🗓️</div>
-    <div>
-      <h3>Latest Bulletin</h3>
-      <p>No cached bulletins yet</p>
-    </div>
-  </div>
-  {% endif %}
-
-  <a class="dash-card" href="/nodes">
-    <div class="dash-icon">🌐</div>
-    <div>
-      <h3>Nodes</h3>
-      <p>{% if node_count is not none %}{{ node_count }} cached{% else %}No cached node list{% endif %}</p>
-    </div>
-  </a>
-
-  <a class="dash-card" href="/mheard">
-    <div class="dash-icon">📡</div>
-    <div>
-      <h3>MHeard</h3>
-      <p>{% if mheard_count is not none %}{{ mheard_count }} recent{% else %}No recent cache{% endif %}</p>
     </div>
   </a>
 </div>

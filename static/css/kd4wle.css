@@ -76,16 +76,56 @@ a:hover {
 .side-nav {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 18px;
+}
+
+.nav-section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.nav-section-title {
+  color: var(--dim);
+  font-size: .74rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  padding: 0 12px;
+  text-transform: uppercase;
 }
 
 .side-nav a {
-  display: block;
-  padding: 12px 14px;
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  min-height: 42px;
+  padding: 10px 12px;
   border-radius: 10px;
   color: var(--text);
   font-weight: 700;
   background: transparent;
+}
+
+.side-nav a i {
+  color: var(--accent);
+  flex: 0 0 18px;
+  text-align: center;
+}
+
+.side-nav a span:not(.nav-badge) {
+  flex: 1;
+}
+
+.nav-badge {
+  background: var(--accent);
+  border-radius: 999px;
+  color: #111827;
+  font-size: .72rem;
+  font-weight: 900;
+  line-height: 1;
+  min-width: 22px;
+  padding: 5px 7px;
+  text-align: center;
 }
 
 .side-nav a:hover {
@@ -248,6 +288,10 @@ pre {
   .side-nav {
     flex-direction: row;
     flex-wrap: wrap;
+  }
+
+  .nav-section {
+    min-width: 155px;
   }
 
   .main-panel {

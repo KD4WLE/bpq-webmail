@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Ports</h2>
+<p class="muted">Cached BPQ port list from node status.</p>
+
+<div class="cache-notice">
+  {% if node_cache_age is none %}
+    Port cache has not been refreshed yet.
+  {% else %}
+    Port cache loaded {{ node_cache_age }} seconds ago.
+  {% endif %}
+</div>
+
+{% if error %}
+  <div class="error">{{ error }}</div>
+{% endif %}
+
+{% if ports %}
+<table>
+  <tr>
+    <th>Port</th>
+    <th>Description</th>
+  </tr>
+  {% for p in ports %}
+  <tr>
+    <td>{{ p.number }}</td>
+    <td>{{ p.description }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<div class="card">
+  <h3>No ports parsed</h3>
+  <p class="muted">Raw port output is shown below.</p>
+  <pre>{{ raw_ports }}</pre>
+</div>
+{% endif %}
+
+{% endblock %}

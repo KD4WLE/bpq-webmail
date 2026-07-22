@@ -813,6 +813,15 @@ def dashboard(request: Request):
 
     node_count = len(NODE_CACHE["nodes"]) if "NODE_CACHE" in globals() and NODE_CACHE["nodes"] else None
     mheard_count = len(MHEARD_CACHE["heard"]) if "MHEARD_CACHE" in globals() and MHEARD_CACHE["heard"] else None
+    connected_users_count = NODE_STATUS_CACHE["connection_count"] if "NODE_STATUS_CACHE" in globals() and NODE_STATUS_CACHE["timestamp"] else None
+    port_count = len(NODE_STATUS_CACHE["ports"]) if "NODE_STATUS_CACHE" in globals() and NODE_STATUS_CACHE["ports"] else None
+    cache_ready = bool(
+        ("LB_CACHE" in globals() and LB_CACHE["timestamp"])
+        or ("NODE_CACHE" in globals() and NODE_CACHE["timestamp"])
+        or ("MHEARD_CACHE" in globals() and MHEARD_CACHE["timestamp"])
+        or ("NODE_STATUS_CACHE" in globals() and NODE_STATUS_CACHE["timestamp"])
+    )
+    system_health = "Ready" if cache_ready else "Starting"
 
     with db() as conn:
         total_users = conn.execute("select count(*) from users").fetchone()[0]
@@ -836,6 +845,9 @@ def dashboard(request: Request):
             "has_watches": bool(watches),
             "recent_unread_watched_bulletins": recent_unread_watched_bulletins,
             "node_count": node_count,
+            "connected_users_count": connected_users_count,
+            "port_count": port_count,
+            "system_health": system_health,
             "mheard_count": mheard_count,
             "bulletin_cache_age": int(time.time() - LB_CACHE["timestamp"]) if "LB_CACHE" in globals() and LB_CACHE["timestamp"] else None,
             "node_cache_age": int(time.time() - NODE_CACHE["timestamp"]) if "NODE_CACHE" in globals() and NODE_CACHE["timestamp"] else None,
@@ -1309,6 +1321,15 @@ def unread_notification_count(user_id: int) -> int:
         ).fetchone()[0]
 
 
+def unread_watchlist_count(user_id: int) -> int:
+    messages = LB_CACHE["messages"] if "LB_CACHE" in globals() else []
+    watches = get_watch_lists(user_id)
+    if not messages or not watches:
+        return 0
+    watched_messages = filter_watched_bulletins(messages, watches)
+    return unread_count_for_messages(user_id, watched_messages)
+
+
 def mark_notifications_read_for_messages(user_id: int, message_ids: list[str]) -> None:
     clean_ids = sorted({str(message_id).strip() for message_id in message_ids if str(message_id).strip()})
     if not clean_ids:
@@ -1328,6 +1349,7 @@ def mark_notifications_read_for_messages(user_id: int, message_ids: list[str]) -
 
 
 templates.env.globals["unread_notification_count"] = unread_notification_count
+templates.env.globals["unread_watchlist_count"] = unread_watchlist_count
 
 
 def apply_bulletin_preferences(messages: list[dict], prefs) -> tuple[list[dict], int]:
@@ -1943,6 +1965,34 @@ def node_status(request: Request):
             "latest_bulletin": latest_bulletin,
             "raw_ports": NODE_STATUS_CACHE["raw_ports"],
             "raw_users": NODE_STATUS_CACHE["raw_users"],
+            "node_cache_age": int(time.time() - NODE_STATUS_CACHE["timestamp"]) if NODE_STATUS_CACHE["timestamp"] else None,
+        },
+    )
+
+
+@app.get("/ports")
+def ports(request: Request):
+    user = get_session_user(request)
+    error = None
+
+    if not NODE_STATUS_CACHE["timestamp"] or time.time() - NODE_STATUS_CACHE["timestamp"] > NODE_STATUS_CACHE_SECONDS:
+        service_user = get_bpq_service_user()
+        if service_user:
+            try:
+                refresh_node_status_cache(service_user)
+            except Exception as e:
+                error = f"Could not refresh ports cache: {e}"
+        else:
+            error = "No approved BPQ account is available to refresh the ports cache."
+
+    return templates.TemplateResponse(
+        "ports.html",
+        {
+            "request": request,
+            "user": user,
+            "error": error,
+            "ports": NODE_STATUS_CACHE["ports"],
+            "raw_ports": NODE_STATUS_CACHE["raw_ports"],
             "node_cache_age": int(time.time() - NODE_STATUS_CACHE["timestamp"]) if NODE_STATUS_CACHE["timestamp"] else None,
         },
     )

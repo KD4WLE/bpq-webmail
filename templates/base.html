@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ site_title }}</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
   <link rel="stylesheet" href="/static/css/kd4wle.css">
 </head>
 
@@ -20,26 +21,63 @@
 
       <nav class="side-nav">
         {% if user %}
-          <a href="/dashboard">🏠 Dashboard</a>
+        <div class="nav-section">
+          <div class="nav-section-title">Dashboard</div>
+          <a href="/dashboard"><i class="fa-solid fa-gauge-high"></i><span>Dashboard</span></a>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-section-title">Messages</div>
+          <a href="/"><i class="fa-solid fa-inbox"></i><span>Inbox</span></a>
+          <a href="/compose"><i class="fa-solid fa-pen-to-square"></i><span>Compose</span></a>
+          <a href="/bulletins"><i class="fa-solid fa-bullhorn"></i><span>Bulletins</span></a>
+        </div>
         {% endif %}
-        <a href="/mheard">📡 MHeard</a>
-        <a href="/node">🖥️ Node Status</a>
-        <a href="/nodes">🌐 Nodes</a>
-        <a href="/connections">🔗 Connections</a>
-        {% if user %}
-          <a href="/">📥 Inbox</a>
-          <a href="/bulletins">📢 Bulletins</a>
-          <a href="/compose">✍️ Compose</a>
-          <a href="/notifications">🔔 Notifications{% set nav_notification_count = unread_notification_count(user.id) %}{% if nav_notification_count %} ({{ nav_notification_count }}){% endif %}</a>
-          <a href="/watchlists">⭐ Watch Lists</a>
-          <a href="/profile">⚙️ Profile</a>
-          {% if user["is_admin"] %}
-            <a href="/admin/users">👥 Admin Users</a>
-            <a href="/admin/password-resets">🔐 Password Resets</a>
+
+        <div class="nav-section">
+          <div class="nav-section-title">Monitoring</div>
+          {% if user %}
+            {% set nav_notification_count = unread_notification_count(user.id) %}
+            {% set nav_watchlist_count = unread_watchlist_count(user.id) %}
+            <a href="/notifications">
+              <i class="fa-solid fa-bell"></i><span>Notifications</span>
+              {% if nav_notification_count %}<span class="nav-badge">{{ nav_notification_count }}</span>{% endif %}
+            </a>
+            <a href="/watchlists">
+              <i class="fa-solid fa-star"></i><span>Watchlist</span>
+              {% if nav_watchlist_count %}<span class="nav-badge">{{ nav_watchlist_count }}</span>{% endif %}
+            </a>
           {% endif %}
-          <a href="/logout">🚪 Logout</a>
+          <a href="/mheard"><i class="fa-solid fa-satellite-dish"></i><span>MHeard</span></a>
+          <a href="/node"><i class="fa-solid fa-server"></i><span>Node Status</span></a>
+          <a href="/connections"><i class="fa-solid fa-link"></i><span>Connections</span></a>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-section-title">Network</div>
+          <a href="/nodes"><i class="fa-solid fa-network-wired"></i><span>Nodes</span></a>
+          <a href="/ports"><i class="fa-solid fa-tower-broadcast"></i><span>Ports</span></a>
+        </div>
+
+        {% if user %}
+        <div class="nav-section">
+          <div class="nav-section-title">Account</div>
+          <a href="/profile"><i class="fa-solid fa-user-gear"></i><span>Profile</span></a>
+          <a href="/logout"><i class="fa-solid fa-right-from-bracket"></i><span>Logout</span></a>
+        </div>
+
+          {% if user["is_admin"] %}
+        <div class="nav-section">
+          <div class="nav-section-title">Administration</div>
+          <a href="/admin/users"><i class="fa-solid fa-users-gear"></i><span>Users</span></a>
+          <a href="/admin/password-resets"><i class="fa-solid fa-key"></i><span>Password Reset Requests</span></a>
+        </div>
+          {% endif %}
         {% else %}
-          <a href="/login">🔐 Login</a>
+        <div class="nav-section">
+          <div class="nav-section-title">Account</div>
+          <a href="/login"><i class="fa-solid fa-right-to-bracket"></i><span>Login</span></a>
+        </div>
         {% endif %}
       </nav>
 
