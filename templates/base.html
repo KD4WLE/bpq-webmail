@@ -103,5 +103,101 @@
     </main>
 
   </div>
+
+  <div class="loading-overlay" id="loading-overlay" aria-live="polite" aria-hidden="true">
+    <div class="loading-panel">
+      <div class="loading-spinner" aria-hidden="true"></div>
+      <div>
+        <strong id="loading-title">Working</strong>
+        <p id="loading-message">Contacting BPQ. This can take a moment.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const overlay = document.getElementById("loading-overlay");
+      const title = document.getElementById("loading-title");
+      const message = document.getElementById("loading-message");
+      if (!overlay || !title || !message) {
+        return;
+      }
+
+      const bpqPaths = new Set([
+        "/",
+        "/bulletins",
+        "/mheard",
+        "/node",
+        "/nodes",
+        "/connections",
+        "/ports",
+        "/compose"
+      ]);
+
+      const messages = {
+        "/": ["Loading Inbox", "Fetching mail from BPQ. This can take a moment."],
+        "/bulletins": ["Loading Bulletins", "Fetching bulletin data from BPQ."],
+        "/mheard": ["Loading MHeard", "Refreshing heard stations from BPQ."],
+        "/node": ["Loading Node Status", "Contacting BPQ for current node status."],
+        "/nodes": ["Loading Nodes", "Fetching the cached node list."],
+        "/connections": ["Loading Connections", "Checking active BPQ connections."],
+        "/ports": ["Loading Ports", "Fetching BPQ port information."],
+        "/compose": ["Sending Message", "Submitting your message to BPQ."]
+      };
+
+      function pathKey(url) {
+        if (url.pathname.startsWith("/bulletin/")) {
+          return "/bulletins";
+        }
+        if (url.pathname.startsWith("/message/")) {
+          return "/";
+        }
+        return bpqPaths.has(url.pathname) ? url.pathname : null;
+      }
+
+      function showLoading(key) {
+        const copy = messages[key] || ["Working", "Contacting BPQ. This can take a moment."];
+        title.textContent = copy[0];
+        message.textContent = copy[1];
+        overlay.classList.add("active");
+        overlay.setAttribute("aria-hidden", "false");
+      }
+
+      document.addEventListener("click", function (event) {
+        const link = event.target.closest("a[href]");
+        if (!link || link.target || link.hasAttribute("download")) {
+          return;
+        }
+
+        const url = new URL(link.href, window.location.href);
+        if (url.origin !== window.location.origin) {
+          return;
+        }
+
+        const key = pathKey(url);
+        if (key) {
+          showLoading(key);
+        }
+      });
+
+      document.addEventListener("submit", function (event) {
+        const form = event.target;
+        const url = new URL(form.action || window.location.href, window.location.href);
+        if (url.origin !== window.location.origin) {
+          return;
+        }
+
+        const key = pathKey(url);
+        if (key || form.method.toLowerCase() === "post") {
+          showLoading(key || url.pathname);
+        }
+      });
+
+      window.addEventListener("pageshow", function () {
+        overlay.classList.remove("active");
+        overlay.setAttribute("aria-hidden", "true");
+      });
+    }());
+  </script>
 </body>
 </html>
