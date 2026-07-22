@@ -3,6 +3,9 @@
 
 <h2>Dashboard</h2>
 <p class="muted">Welcome, {{ user.callsign }}.</p>
+{% if request.query_params.get('status') %}
+  <div class="cache-notice">{{ request.query_params.get('status') }}</div>
+{% endif %}
 
 <div class="dashboard-grid">
   <a class="dash-card" href="/node">
@@ -13,8 +16,24 @@
     </div>
   </a>
 
+  <a class="dash-card" href="/">
+    <div class="dash-icon dash-icon-amber"><i class="fa-solid fa-inbox"></i></div>
+    <div>
+      <h3>Inbox</h3>
+      <p>{% if new_mail_count is not none %}{{ new_mail_count }} messages{% else %}Mailbox unavailable{% endif %}</p>
+    </div>
+  </a>
+
+  <a class="dash-card" href="/bulletins">
+    <div class="dash-icon dash-icon-rose"><i class="fa-solid fa-bullhorn"></i></div>
+    <div>
+      <h3>Unread Bulletins</h3>
+      <p>{{ unread_count }} unread / {{ bulletin_count }} cached</p>
+    </div>
+  </a>
+
   <a class="dash-card" href="/connections">
-    <div class="dash-icon dash-icon-amber"><i class="fa-solid fa-users"></i></div>
+    <div class="dash-icon dash-icon-green"><i class="fa-solid fa-users"></i></div>
     <div>
       <h3>Connected Users</h3>
       <p>{% if connected_users_count is not none %}{{ connected_users_count }} active{% else %}No recent cache{% endif %}</p>
@@ -26,14 +45,6 @@
     <div>
       <h3>Connected Nodes</h3>
       <p>{% if node_count is not none %}{{ node_count }} cached{% else %}No cached node list{% endif %}</p>
-    </div>
-  </a>
-
-  <a class="dash-card" href="/bulletins">
-    <div class="dash-icon dash-icon-rose"><i class="fa-solid fa-bullhorn"></i></div>
-    <div>
-      <h3>Unread Bulletins</h3>
-      <p>{{ unread_count }} unread / {{ bulletin_count }} cached</p>
     </div>
   </a>
 
@@ -52,6 +63,12 @@
       <p>{{ notification_count }} unread notifications</p>
     </div>
   </a>
+</div>
+
+<div class="button-row">
+  <form method="post" action="/dashboard/refresh-caches" onsubmit="return confirm('Refresh all BPQ-backed caches now? This may take a moment.');">
+    <button type="submit"><i class="fa-solid fa-rotate"></i> Update All Caches</button>
+  </form>
 </div>
 
 <h3>Recent Bulletins</h3>

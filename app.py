@@ -866,6 +866,48 @@ def dashboard(request: Request):
     )
 
 
+@app.post("/dashboard/refresh-caches")
+def dashboard_refresh_caches(request: Request):
+    user = require_user(request)
+    service_user = get_bpq_service_user() or user
+    ports = {
+        "1": "AX/IP/UDP",
+        "2": "Internet Gateway",
+        "4": "Users-145.09",
+        "8": "HF 20/40/80m VARA",
+        "9": "Net44",
+        "10": "AREDN",
+    }
+
+    errors = []
+    try:
+        messages, raw_output, unmatched_lines = fetch_bulletin_list(service_user)
+        LB_CACHE["timestamp"] = time.time()
+        LB_CACHE["messages"] = messages
+        LB_CACHE["raw_output"] = raw_output
+        LB_CACHE["unmatched_lines"] = unmatched_lines
+        clear_bulletin_response_cache()
+    except Exception as exc:
+        errors.append(f"bulletins: {exc}")
+
+    for label, refresh in (
+        ("mheard", lambda: refresh_mheard_cache(service_user, ports)),
+        ("node status", lambda: refresh_node_status_cache(service_user)),
+        ("connections", lambda: refresh_connections_cache(service_user)),
+        ("nodes", lambda: refresh_nodes_cache(service_user)),
+    ):
+        try:
+            refresh()
+        except Exception as exc:
+            errors.append(f"{label}: {exc}")
+
+    if errors:
+        query = urlencode({"status": "Cache refresh finished with errors: " + "; ".join(errors)})
+    else:
+        query = urlencode({"status": "All caches refreshed."})
+    return RedirectResponse(f"/dashboard?{query}", status_code=303)
+
+
 LB_CACHE = {
     "timestamp": 0,
     "messages": [],
