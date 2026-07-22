@@ -379,6 +379,31 @@ pre {
 
 .dash-icon {
   font-size: 2rem;
+  line-height: 1;
+}
+
+.dash-icon i {
+  color: currentColor !important;
+}
+
+.dash-icon-sky {
+  color: #38bdf8;
+}
+
+.dash-icon-amber {
+  color: #f59e0b;
+}
+
+.dash-icon-green {
+  color: #22c55e;
+}
+
+.dash-icon-rose {
+  color: #fb7185;
+}
+
+.dash-icon-purple {
+  color: #a78bfa;
 }
 
 .pager {

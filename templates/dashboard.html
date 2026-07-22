@@ -6,7 +6,7 @@
 
 <div class="dashboard-grid">
   <a class="dash-card" href="/node">
-    <div class="dash-icon"><i class="fa-solid fa-heart-pulse"></i></div>
+    <div class="dash-icon dash-icon-sky"><i class="fa-solid fa-heart-pulse"></i></div>
     <div>
       <h3>System Health</h3>
       <p>{{ system_health }}</p>
@@ -14,7 +14,7 @@
   </a>
 
   <a class="dash-card" href="/connections">
-    <div class="dash-icon"><i class="fa-solid fa-users"></i></div>
+    <div class="dash-icon dash-icon-amber"><i class="fa-solid fa-users"></i></div>
     <div>
       <h3>Connected Users</h3>
       <p>{% if connected_users_count is not none %}{{ connected_users_count }} active{% else %}No recent cache{% endif %}</p>
@@ -22,7 +22,7 @@
   </a>
 
   <a class="dash-card" href="/nodes">
-    <div class="dash-icon"><i class="fa-solid fa-network-wired"></i></div>
+    <div class="dash-icon dash-icon-green"><i class="fa-solid fa-network-wired"></i></div>
     <div>
       <h3>Connected Nodes</h3>
       <p>{% if node_count is not none %}{{ node_count }} cached{% else %}No cached node list{% endif %}</p>
@@ -30,7 +30,7 @@
   </a>
 
   <a class="dash-card" href="/bulletins">
-    <div class="dash-icon"><i class="fa-solid fa-bullhorn"></i></div>
+    <div class="dash-icon dash-icon-rose"><i class="fa-solid fa-bullhorn"></i></div>
     <div>
       <h3>Unread Bulletins</h3>
       <p>{{ unread_count }} unread / {{ bulletin_count }} cached</p>
@@ -38,7 +38,7 @@
   </a>
 
   <a class="dash-card" href="/watchlists">
-    <div class="dash-icon"><i class="fa-solid fa-star"></i></div>
+    <div class="dash-icon dash-icon-purple"><i class="fa-solid fa-star"></i></div>
     <div>
       <h3>Watchlist Hits</h3>
       <p>{{ watched_unread_count }} unread watched</p>
@@ -46,7 +46,7 @@
   </a>
 
   <a class="dash-card" href="/notifications">
-    <div class="dash-icon"><i class="fa-solid fa-bell"></i></div>
+    <div class="dash-icon dash-icon-sky"><i class="fa-solid fa-bell"></i></div>
     <div>
       <h3>Notifications</h3>
       <p>{{ notification_count }} unread notifications</p>
