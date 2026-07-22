@@ -6,6 +6,7 @@ import threading
 import re as _re
 import poplib
 import smtplib
+import usage_analytics_integration
 from email.parser import BytesParser
 from email.policy import default
 from email.message import EmailMessage
@@ -353,6 +354,15 @@ def require_admin(request: Request) -> sqlite3.Row:
     if not user["is_admin"]:
         raise HTTPException(status_code=403, detail="Admin access required.")
     return user
+
+
+usage_analytics_integration.install(
+    app,
+    templates,
+    DB_PATH,
+    get_session_user,
+    require_admin,
+)
 
 
 def get_bpq_service_user() -> Optional[sqlite3.Row]:

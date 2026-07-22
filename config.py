@@ -23,6 +23,11 @@ def env_int(name: str, default_value: int) -> int:
     return int(env(name, str(default_value)))
 
 
+def env_list(name: str, default_value: str = "") -> tuple[str, ...]:
+    value = env(name, default_value)
+    return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
 def env_path(name: str, default_value: Path) -> Path:
     value = os.environ.get(name)
     if not value:
@@ -74,3 +79,12 @@ COMPOSE_PRIVATE_COMMAND = env("BPQ_COMPOSE_PRIVATE_COMMAND", "sp")
 COMPOSE_BULLETIN_COMMAND = env("BPQ_COMPOSE_BULLETIN_COMMAND", "sb")
 COMPOSE_NTS_COMMAND = env("BPQ_COMPOSE_NTS_COMMAND", "st")
 COMPOSE_WINLINK_COMMAND = env("BPQ_COMPOSE_WINLINK_COMMAND", "sp")
+
+# Privacy-conscious portal usage analytics.
+ANALYTICS_ENABLED = env_bool("ANALYTICS_ENABLED", True)
+ANALYTICS_IGNORE_PATHS = env_list(
+    "ANALYTICS_IGNORE_PATHS",
+    "/static*,/favicon.ico,/health",
+)
+ANALYTICS_IGNORE_BOTS = env_bool("ANALYTICS_IGNORE_BOTS", True)
+ANALYTICS_RETENTION_DAYS = env_int("ANALYTICS_RETENTION_DAYS", 365)
