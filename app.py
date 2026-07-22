@@ -806,14 +806,20 @@ def dashboard(request: Request):
                 pass
 
     bulletins = LB_CACHE["messages"] if "LB_CACHE" in globals() else []
-    unread_count = unread_count_for_messages(user["id"], bulletins)
+    with db() as conn:
+        prefs = conn.execute(
+            "select hidden_categories, hidden_areas, hidden_senders, page_size from bulletin_preferences where user_id=?",
+            (user["id"],),
+        ).fetchone()
+    visible_bulletins, _ = apply_bulletin_preferences(bulletins, prefs)
+    unread_count = unread_count_for_messages(user["id"], visible_bulletins)
     watches = get_watch_lists(user["id"])
-    watched_bulletins = filter_watched_bulletins(bulletins, watches)
+    watched_bulletins = filter_watched_bulletins(visible_bulletins, watches)
     watched_unread_count = unread_count_for_messages(user["id"], watched_bulletins)
     notification_count = unread_notification_count(user["id"])
-    latest_bulletin = bulletins[0] if bulletins else None
-    read_ids = get_read_message_ids(user["id"], [str(m["id"]) for m in bulletins])
-    recent_bulletins = [dict(m) for m in bulletins[:5]]
+    latest_bulletin = visible_bulletins[0] if visible_bulletins else None
+    read_ids = get_read_message_ids(user["id"], [str(m["id"]) for m in visible_bulletins])
+    recent_bulletins = [dict(m) for m in visible_bulletins[:5]]
     for message in recent_bulletins:
         message["is_read"] = str(message["id"]) in read_ids
     recent_unread_watched_bulletins = [
@@ -847,6 +853,7 @@ def dashboard(request: Request):
             "new_mail_count": new_mail_count,
             "mail_error": mail_error,
             "bulletin_count": len(bulletins),
+            "visible_bulletin_count": len(visible_bulletins),
             "unread_count": unread_count,
             "watched_unread_count": watched_unread_count,
             "notification_count": notification_count,

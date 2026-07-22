@@ -24,11 +24,14 @@
     </div>
   </a>
 
-  <a class="dash-card" href="/bulletins">
+  <a class="dash-card" href="/bulletins?unread=1">
     <div class="dash-icon dash-icon-rose"><i class="fa-solid fa-bullhorn"></i></div>
     <div>
       <h3>Unread Bulletins</h3>
-      <p>{{ unread_count }} unread / {{ bulletin_count }} cached</p>
+      <p>{{ unread_count }} unread / {{ visible_bulletin_count }} visible</p>
+      {% if visible_bulletin_count != bulletin_count %}
+        <p>{{ bulletin_count }} cached total</p>
+      {% endif %}
     </div>
   </a>
 
