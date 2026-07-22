@@ -94,7 +94,7 @@ def install(
     @app.get("/admin/usage", response_class=HTMLResponse)
     def admin_usage(
         request: Request,
-        days: int = Query(30, ge=1, le=3650),
+        days: int = Query(1, ge=1, le=3650),
     ):
         user = require_admin(request)
         report = analytics.get_usage_report(db_path, days)

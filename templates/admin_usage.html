@@ -2,13 +2,43 @@
 {% block content %}
 
 <h2>Usage Analytics</h2>
-<p class="muted">Privacy-conscious portal activity for the selected reporting window.</p>
+<p class="muted">Recent portal activity, with logged-in users first.</p>
 
 <form method="get" action="/admin/usage" class="inline-form">
   <label for="days">Days</label>
   <input id="days" type="number" name="days" min="1" max="3650" value="{{ days }}">
   <button type="submit">Update</button>
+  <a class="button" href="/admin/usage?days=1">Today</a>
+  <a class="button" href="/admin/usage?days=7">7 Days</a>
+  <a class="button" href="/admin/usage?days=30">30 Days</a>
 </form>
+
+<h3>Recent Users</h3>
+{% if recent_users %}
+<table>
+  <tr>
+    <th>Callsign</th>
+    <th>Last Seen</th>
+    <th>Last Page</th>
+    <th>Requests</th>
+    <th>Pages</th>
+  </tr>
+  {% for row in recent_users %}
+  <tr>
+    <td><strong>{{ row.callsign }}</strong></td>
+    <td>{{ row.last_seen }}</td>
+    <td>{{ row.last_path or "-" }}</td>
+    <td>{{ row.requests }}</td>
+    <td>{{ row.pages }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+  <div class="card">
+    <h3>No recent users</h3>
+    <p class="muted">Logged-in user activity for the selected window will appear here.</p>
+  </div>
+{% endif %}
 
 <div class="dashboard-grid">
   <a class="metric-card" href="/admin/usage?days={{ days }}">
@@ -43,27 +73,26 @@
   </a>
 </div>
 
-<h3>Daily Activity</h3>
-{% if daily %}
+<h3>Top Users</h3>
+{% if top_users %}
 <table>
   <tr>
-    <th>Day</th>
+    <th>Callsign</th>
     <th>Requests</th>
-    <th>Visitors</th>
+    <th>Active Days</th>
+    <th>Last Seen</th>
   </tr>
-  {% for row in daily %}
+  {% for row in top_users %}
   <tr>
-    <td>{{ row.day }}</td>
+    <td>{{ row.callsign }}</td>
     <td>{{ row.requests }}</td>
-    <td>{{ row.visitors }}</td>
+    <td>{{ row.active_days }}</td>
+    <td>{{ row.last_seen }}</td>
   </tr>
   {% endfor %}
 </table>
 {% else %}
-  <div class="card">
-    <h3>No analytics yet</h3>
-    <p class="muted">Traffic will appear here after requests are recorded.</p>
-  </div>
+  <p class="muted">No logged-in user activity in this window.</p>
 {% endif %}
 
 <h3>Top Pages</h3>
@@ -86,26 +115,27 @@
   <p class="muted">No page activity in this window.</p>
 {% endif %}
 
-<h3>Top Users</h3>
-{% if top_users %}
+<h3>Daily Activity</h3>
+{% if daily %}
 <table>
   <tr>
-    <th>Callsign</th>
+    <th>Day</th>
     <th>Requests</th>
-    <th>Active Days</th>
-    <th>Last Seen</th>
+    <th>Visitors</th>
   </tr>
-  {% for row in top_users %}
+  {% for row in daily %}
   <tr>
-    <td>{{ row.callsign }}</td>
+    <td>{{ row.day }}</td>
     <td>{{ row.requests }}</td>
-    <td>{{ row.active_days }}</td>
-    <td>{{ row.last_seen }}</td>
+    <td>{{ row.visitors }}</td>
   </tr>
   {% endfor %}
 </table>
 {% else %}
-  <p class="muted">No logged-in user activity in this window.</p>
+  <div class="card">
+    <h3>No analytics yet</h3>
+    <p class="muted">Traffic will appear here after requests are recorded.</p>
+  </div>
 {% endif %}
 
 <h3>Status Codes</h3>

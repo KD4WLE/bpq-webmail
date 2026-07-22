@@ -260,6 +260,32 @@ def get_usage_report(db_path: Path | str, days: int = 30) -> dict[str, Any]:
             (window,),
         )
 
+        recent_users = _rows(
+            conn,
+            """
+            SELECT
+                COALESCE(NULLIF(callsign, ''), 'User ' || user_id) AS callsign,
+                COUNT(*) AS requests,
+                COUNT(DISTINCT path) AS pages,
+                MAX(created_at) AS last_seen,
+                (
+                    SELECT inner_requests.path
+                    FROM usage_requests inner_requests
+                    WHERE inner_requests.user_id = usage_requests.user_id
+                      AND inner_requests.created_at >= datetime('now', ?)
+                    ORDER BY inner_requests.created_at DESC, inner_requests.id DESC
+                    LIMIT 1
+                ) AS last_path
+            FROM usage_requests
+            WHERE created_at >= datetime('now', ?)
+              AND user_id IS NOT NULL
+            GROUP BY user_id, callsign
+            ORDER BY last_seen DESC
+            LIMIT 20
+            """,
+            (window, window),
+        )
+
         status_codes = _rows(
             conn,
             """
@@ -277,5 +303,6 @@ def get_usage_report(db_path: Path | str, days: int = 30) -> dict[str, Any]:
         "daily": daily,
         "top_pages": top_pages,
         "top_users": top_users,
+        "recent_users": recent_users,
         "status_codes": status_codes,
     }
