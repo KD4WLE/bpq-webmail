@@ -1052,6 +1052,55 @@ def refresh_mheard_cache(user, ports: dict[str, str]) -> None:
     MHEARD_CACHE["heard"] = heard
 
 
+def get_portal_mheard(limit: int = 50) -> list[dict]:
+    try:
+        with db() as conn:
+            exists = conn.execute(
+                """
+                select name from sqlite_master
+                where type='table' and name='usage_requests'
+                """
+            ).fetchone()
+            if not exists:
+                return []
+
+            rows = conn.execute(
+                """
+                select
+                    coalesce(nullif(callsign, ''), 'User ' || user_id) as callsign,
+                    max(created_at) as last_seen,
+                    count(*) as requests,
+                    (
+                        select inner_requests.path
+                        from usage_requests inner_requests
+                        where inner_requests.user_id = usage_requests.user_id
+                        order by inner_requests.created_at desc, inner_requests.id desc
+                        limit 1
+                    ) as last_path
+                from usage_requests
+                where user_id is not null
+                group by user_id, callsign
+                order by last_seen desc
+                limit ?
+                """,
+                (limit,),
+            ).fetchall()
+    except Exception as exc:
+        print(f"Portal MHeard query failed: {exc}")
+        return []
+
+    return [
+        {
+            "port": "WEB",
+            "port_name": "Portal Users",
+            "callsign": row["callsign"],
+            "last_heard": row["last_seen"],
+            "extra": f"{row['requests']} portal requests; last page {row['last_path'] or '-'}",
+        }
+        for row in rows
+    ]
+
+
 def refresh_connections_cache(user) -> None:
     output = bpq_command(user, "users", timeout=10, settle=1.0)
     lines = []
@@ -1867,7 +1916,7 @@ def mheard(request: Request, port: str = Query("all")):
     }
     error = None
 
-    if port != "all" and port not in ports:
+    if port != "all" and port != "portal" and port not in ports:
         port = "all"
 
     if not MHEARD_CACHE["heard"] or time.time() - MHEARD_CACHE["timestamp"] > MHEARD_CACHE_SECONDS:
@@ -1880,8 +1929,14 @@ def mheard(request: Request, port: str = Query("all")):
         else:
             error = "No approved BPQ account is available to refresh the MHeard cache."
 
-    heard = MHEARD_CACHE["heard"]
-    if port != "all":
+    bpq_heard = MHEARD_CACHE["heard"]
+    portal_heard = get_portal_mheard()
+    if port == "portal":
+        heard = portal_heard
+    elif port == "all":
+        heard = portal_heard + bpq_heard
+    else:
+        heard = bpq_heard
         heard = [h for h in heard if h["port"] == port]
 
     return templates.TemplateResponse(
@@ -1891,6 +1946,7 @@ def mheard(request: Request, port: str = Query("all")):
             "user": user,
             "ports": ports,
             "selected_port": port,
+            "portal_count": len(portal_heard),
             "heard": heard,
             "error": error,
             "cache_age": int(time.time() - MHEARD_CACHE["timestamp"]) if MHEARD_CACHE["timestamp"] else None,
