@@ -2,8 +2,8 @@
 
 BPQ Portal is a web front end for LinBPQ/BPQMail systems. It gives packet radio
 users a browser-based mailbox, bulletin reader, compose screen, watch lists,
-notifications, and public node-status views while keeping BPQ-specific settings
-in local deployment configuration.
+notifications, operator dashboard, and public monitoring views while keeping
+BPQ-specific settings in local deployment configuration.
 
 The project is built with FastAPI, Jinja templates, SQLite, and BPQ POP3/telnet
 access.
@@ -20,16 +20,22 @@ access.
   - Bulletins
   - NTS
   - Winlink-style addressing
-- Cached bulletin list with search, filters, pagination, and unread indicators
+- Cached bulletin list with search, filters, pagination, unread indicators, and unread-only view
+- Mark visible bulletins read or mark every cached bulletin read, including hidden/filtered bulletins
 - Bulletin preferences for page size, hidden categories, hidden areas, and hidden senders
 - Watch lists by sender, area, or category
 - Notification center for unread watched bulletins
-- Dashboard with new mail, unread bulletins, watched bulletins, notifications, latest bulletin, nodes, and MHeard status
+- Dashboard cards for system health, inbox, unread bulletins, connected users, nodes, watchlist hits, and notifications
+- Dashboard cache refresh action for BPQ-backed caches
+- Loading/activity indicator while slow BPQ-backed pages are fetching data
+- Admin usage analytics with recent users as the primary view
 - Public, logged-out access for:
   - MHeard
   - Node Status
   - Nodes
+  - Ports
   - Connections
+- MHeard includes a `Portal Users` pseudo-port backed by local portal activity
 - Portable `.env` configuration for branding, BPQ hosts/ports, database path, web bind settings, and setup behavior
 - Optional systemd service install/update script
 
@@ -45,7 +51,7 @@ building node-status caches. POP3 is used for inbox counts, message listing,
 message reading, and killing mailbox messages.
 
 SQLite stores portal users, preferences, read tracking, watch lists,
-notifications, and password reset requests.
+notifications, password reset requests, and privacy-conscious usage analytics.
 
 ## BPQ Permissions Needed
 
@@ -64,6 +70,11 @@ must be able to run the BPQ commands used for:
 - `mh <port>`
 - `po`
 - BBS bulletin list/read commands
+
+Public monitoring pages use an approved admin/service account when a BPQ command
+must be run without a logged-in user. If no approved BPQ account exists, the
+page will show a cache/service-account warning instead of prompting anonymous
+visitors for BPQ credentials.
 
 Default compose command prefixes are:
 
@@ -136,6 +147,95 @@ Open:
 ```text
 http://127.0.0.1:8088
 ```
+
+## Main Routes
+
+- `/dashboard` - authenticated operator dashboard
+- `/inbox` or `/` - authenticated mailbox
+- `/compose` - send private, bulletin, NTS, or Winlink-style messages
+- `/bulletins` - searchable bulletin list
+- `/bulletins?unread=1` - unread-only bulletin list
+- `/watchlists` - sender/area/category watch lists and watched bulletins
+- `/notifications` - notification center for watch-list hits
+- `/profile` - user preferences and password change
+- `/mheard` - public BPQ MHeard plus portal users in All
+- `/mheard?port=portal` - public Portal Users pseudo-port
+- `/node` - public node status
+- `/nodes` - public node list
+- `/ports` - public port status
+- `/connections` - public active connections
+- `/admin/users` - admin user management
+- `/admin/password-resets` - admin password reset requests
+- `/admin/usage` - admin usage analytics, defaulting to the last day
+
+## Bulletins
+
+Bulletins are cached locally to avoid expensive BPQ calls on every page load.
+The list supports:
+
+- Search across subject, sender/from, area, category, and cached message bodies
+- Category filter
+- User preferences for page size and hidden categories, areas, and senders
+- Per-user unread tracking
+- `Show Unread Only`
+- `Mark visible as read`
+- `Mark all bulletins as read`
+
+`Mark all bulletins as read` uses the cached bulletin list and intentionally
+includes bulletins hidden by filters or user preferences.
+
+Opening a bulletin marks it read for that portal user.
+
+## Dashboard And Caches
+
+The dashboard highlights the most common operator status:
+
+- System Health
+- Inbox
+- Unread Bulletins
+- Connected Users
+- Connected Nodes
+- Watchlist Hits
+- Notifications
+
+The **Update All Caches** action refreshes the BPQ-backed bulletin, MHeard,
+node status, connections, and nodes caches. Because these operations can take a
+moment, the UI shows a loading indicator while the request is in flight.
+
+Background bulletin refresh also runs from the app process. If BPQ is slow or
+unavailable, the portal keeps showing cached data where it can and displays an
+error notice for failed refreshes.
+
+## MHeard And Portal Users
+
+`/mheard` shows BPQ MHeard entries by configured port. The portal also adds a
+local **Portal Users** pseudo-port:
+
+```text
+/mheard?port=portal
+```
+
+Portal Users are not BPQ RF-heard stations. They are recent logged-in web
+portal users from local usage analytics, shown with port `WEB` so operators can
+see portal activity without confusing it with BPQ MHeard data.
+
+## Usage Analytics
+
+Usage analytics are privacy-conscious and local to SQLite. Anonymous visitors
+are represented by a hashed visitor key, and logged-in users are grouped by
+user/callsign.
+
+Admins can view:
+
+- Recent Users
+- Summary cards
+- Top Users
+- Top Pages
+- Daily Activity
+- Status Codes
+
+The default `/admin/usage` view is one day. The retention period and bot/path
+filters are configured in `.env`.
 
 ## First Admin Setup
 
@@ -325,6 +425,7 @@ Important groups:
 - Compose commands: `BPQ_COMPOSE_*_COMMAND`
 - First-run setup: `FIRST_RUN_SETUP_ENABLED`, `FIRST_RUN_SETUP_TOKEN`
 - Optional admin auto-create: `AUTO_CREATE_ADMIN`, `APP_ADMIN_*`
+- Usage analytics: `ANALYTICS_ENABLED`, `ANALYTICS_IGNORE_PATHS`, `ANALYTICS_IGNORE_BOTS`, `ANALYTICS_RETENTION_DAYS`
 
 ## Security Notes
 
